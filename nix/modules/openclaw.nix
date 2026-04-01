@@ -6,22 +6,26 @@
 }: let
   cfg = config.services.openclaw;
   stateDir = "/var/lib/openclaw";
+  extensionsDir = "${stateDir}/dist/extensions";
+  distDir = "${stateDir}/dist";
+  packageDist = "${cfg.package}/lib/openclaw/dist";
+  packageNodeModules = "${cfg.package}/lib/openclaw/node_modules";
 
   # Merge config attrset and configFile into a single JSON file
   configFile = let
     hasAttrset = cfg.config != {};
     hasFile = cfg.configFile != null;
   in
-    if hasAttrset && hasFile then
+    if hasAttrset && hasFile
+    then
       pkgs.writeText "openclaw.json" (builtins.toJSON (
         (builtins.fromJSON (builtins.readFile cfg.configFile)) // cfg.config
       ))
-    else if hasAttrset then
-      pkgs.writeText "openclaw.json" (builtins.toJSON cfg.config)
-    else if hasFile then
-      cfg.configFile
-    else
-      null;
+    else if hasAttrset
+    then pkgs.writeText "openclaw.json" (builtins.toJSON cfg.config)
+    else if hasFile
+    then cfg.configFile
+    else null;
 in {
   options.services.openclaw = {
     enable = lib.mkEnableOption "OpenClaw gateway";
@@ -77,6 +81,16 @@ in {
       default = "openclaw";
       description = "Group to run OpenClaw as";
     };
+
+    mutableExtensionsDir = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Copy extension files from the read-only Nix store into a mutable state directory.
+        Required for upstream versions that enforce plugin path boundary validation.
+        Disable only if your OpenClaw version has the upstream fix merged.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -96,14 +110,19 @@ in {
       wantedBy = ["multi-user.target"];
       after = ["network.target"];
 
-      environment = {
-        PORT = toString cfg.port;
-        BIND_ADDRESS = cfg.bind;
-        OPENCLAW_NIX_MODE = "1";
-        HOME = stateDir;
-      } // (lib.optionalAttrs (configFile != null) {
-        OPENCLAW_CONFIG_FILE = configFile;
-      });
+      environment =
+        {
+          PORT = toString cfg.port;
+          BIND_ADDRESS = cfg.bind;
+          OPENCLAW_NIX_MODE = "1";
+          HOME = stateDir;
+        }
+        // (lib.optionalAttrs (configFile != null) {
+          OPENCLAW_CONFIG_FILE = configFile;
+        })
+        // (lib.optionalAttrs cfg.mutableExtensionsDir {
+          OPENCLAW_BUNDLED_PLUGINS_DIR = extensionsDir;
+        });
 
       serviceConfig = {
         Type = "simple";
@@ -122,12 +141,32 @@ in {
         ReadWritePaths = [stateDir];
       };
 
-      preStart = lib.optionalString (configFile != null) ''
-        mkdir -p ${stateDir}/.openclaw
-        cp ${configFile} ${stateDir}/.openclaw/openclaw.json
-        chmod 600 ${stateDir}/.openclaw/openclaw.json
-        chown -R ${cfg.user}:${cfg.group} ${stateDir}
-      '';
+      preStart = let
+        configSetup = lib.optionalString (configFile != null) ''
+          mkdir -p ${stateDir}/.openclaw
+          cp ${configFile} ${stateDir}/.openclaw/openclaw.json
+          chmod 600 ${stateDir}/.openclaw/openclaw.json
+        '';
+
+        extensionsSetup = lib.optionalString cfg.mutableExtensionsDir ''
+          # Workaround for upstream plugin path boundary validation.
+          # Nix store paths fail the "unsafe plugin manifest path" check.
+          # Copy extensions to mutable storage and symlink node_modules.
+          rm -rf ${distDir}
+          mkdir -p ${distDir}
+          cp -r ${packageDist}/* ${distDir}/
+          ln -sfn ${packageNodeModules} ${distDir}/node_modules
+        '';
+
+        bothSetup = lib.concatStringsSep "\n\n" (lib.filter (s: s != "") [
+          configSetup
+          extensionsSetup
+          "chown -R ${cfg.user}:${cfg.group} ${stateDir}"
+        ]);
+      in
+        lib.mkIf (configSetup != "" || extensionsSetup != "") ''
+          ${bothSetup}
+        '';
     };
   };
 }
