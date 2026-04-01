@@ -140,26 +140,10 @@ in {
         }
         // lib.optionalAttrs cfg.mutableExtensionsDir {
           OPENCLAW_BUNDLED_PLUGINS_DIR = extensionsDir;
+        }
+        // lib.optionalAttrs hasConfig {
+          CONFIG_HASH = builtins.hashString "sha256" (builtins.toJSON mergedConfig);
         };
-
-      serviceConfig = {
-        Type = "simple";
-        User = cfg.user;
-        Group = cfg.group;
-        WorkingDirectory = stateDir;
-        ExecStart = "${cfg.package}/bin/openclaw gateway";
-        Restart = "always";
-        RestartSec = 5;
-
-        # Hardening
-        NoNewPrivileges = true;
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        PrivateTmp = true;
-        ReadWritePaths = [stateDir];
-      };
-
-      environment.CONFIG_HASH = lib.mkIf hasConfig (builtins.hashString "sha256" (builtins.toJSON mergedConfig));
 
       preStart = let
         setupConfig = lib.optionalString hasConfig ''
