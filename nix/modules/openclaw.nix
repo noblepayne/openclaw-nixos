@@ -15,7 +15,6 @@
   cronJobsPath = "${cronDir}/jobs.json";
 
   # Merge config: base (from file or attrset) + overlay (from attrset)
-  # Priority order: configFile < config attrset < environment overrides
   configFileContent =
     if cfg.configFile != null
     then builtins.fromJSON (builtins.readFile cfg.configFile)
@@ -24,15 +23,70 @@
   mergedConfig = lib.recursiveUpdate configFileContent cfg.config;
 
   hasConfig = cfg.config != {};
-
   hasCronJobs = cfg.cronJobs != {};
+
+  # Script that runs as root to set up state directory
+  # Uses + prefix in ExecStartPre to run regardless of User setting
+  setupScript = pkgs.writeShellScript "openclaw-setup" ''
+    # Remove old dist if it exists (may be from previous generation)
+    [ -d ${distDir} ] && rm -rf ${distDir}
+    mkdir -p ${distDir}
+    cp -r ${packageDist}/* ${distDir}/
+    ln -sfn ${packageNodeModules} ${distDir}/node_modules
+
+    # Write config if provided
+    if [ -n "${lib.optionalString hasConfig "yes" ""}" ]; then
+      mkdir -p $(dirname ${configPath})
+      cat > ${configPath}.tmp << 'CONFIG_EOF'
+  ${builtins.toJSON mergedConfig}
+  CONFIG_EOF
+      mv ${configPath}.tmp ${configPath}
+    fi
+
+    # Write cron jobs if provided
+    if [ -n "${lib.optionalString hasCronJobs "yes" ""}" ]; then
+      mkdir -p ${cronDir}
+      cat > ${cronJobsPath}.tmp << 'CRON_EOF'
+  ${builtins.toJSON cfg.cronJobs}
+  CRON_EOF
+      mv ${cronJobsPath}.tmp ${cronJobsPath}
+    fi
+
+    # Fix permissions
+    chown -R ${cfg.user}:${cfg.group} ${stateDir}
+  '';
+
+  # Build the preStart string: + prefix = run as root
+  preStartScript =
+    if cfg.mutableExtensionsDir
+    then "${setupScript}"
+    else if hasConfig || hasCronJobs
+    then let
+      steps = lib.filter (s: s != "") [
+        (lib.optionalString hasConfig ''
+          mkdir -p $(dirname ${configPath})
+          cat > ${configPath}.tmp << 'CONFIG_EOF'
+          ${builtins.toJSON mergedConfig}
+          CONFIG_EOF
+          mv ${configPath}.tmp ${configPath}
+        '')
+        (lib.optionalString hasCronJobs ''
+          mkdir -p ${cronDir}
+          cat > ${cronJobsPath}.tmp << 'CRON_EOF'
+          ${builtins.toJSON cfg.cronJobs}
+          CRON_EOF
+          mv ${cronJobsPath}.tmp ${cronJobsPath}
+        '')
+      ];
+    in lib.concatStringsSep "\n\n" steps
+    else "";
 in {
   options.services.openclaw = {
     enable = lib.mkEnableOption "OpenClaw gateway";
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.openclaw-gateway;
+      default = pkgs.openclaw;
       description = "OpenClaw gateway package to use";
     };
 
@@ -145,43 +199,27 @@ in {
           CONFIG_HASH = builtins.hashString "sha256" (builtins.toJSON mergedConfig);
         };
 
-      preStart = let
-        setupConfig = lib.optionalString hasConfig ''
-          # Write merged config to state dir
-          mkdir -p $(dirname ${configPath})
-          cat > ${configPath}.tmp << 'CONFIG_EOF'
-          ${builtins.toJSON mergedConfig}
-          CONFIG_EOF
-          mv ${configPath}.tmp ${configPath}
-        '';
+      serviceConfig = {
+        Type = "simple";
+        User = cfg.user;
+        Group = cfg.group;
+        WorkingDirectory = stateDir;
+        ExecStart = "${cfg.package}/bin/openclaw gateway";
+        Restart = "always";
+        RestartSec = 5;
 
-        setupCron = lib.optionalString hasCronJobs ''
-          # Write cron jobs
-          mkdir -p ${cronDir}
-          cat > ${cronJobsPath}.tmp << 'CRON_EOF'
-          ${builtins.toJSON cfg.cronJobs}
-          CRON_EOF
-          mv ${cronJobsPath}.tmp ${cronJobsPath}
-        '';
+        # Hardening
+        NoNewPrivileges = true;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        ReadWritePaths = [stateDir];
+      };
 
-        setupExtensions = lib.optionalString cfg.mutableExtensionsDir ''
-          # Workaround for upstream plugin path boundary validation.
-          # Nix store paths fail the "unsafe plugin manifest path" check.
-          # Copy extensions to mutable storage and symlink node_modules.
-          rm -rf ${distDir}
-          mkdir -p ${distDir}
-          cp -r ${packageDist}/* ${distDir}/
-          ln -sfn ${packageNodeModules} ${distDir}/node_modules
-        '';
-
-        steps = lib.filter (s: s != "") [
-          setupConfig
-          setupCron
-          setupExtensions
-          "chown -R ${cfg.user}:${cfg.group} ${stateDir}"
-        ];
-      in
-        lib.mkIf (steps != []) (lib.concatStringsSep "\n\n" steps);
+      # + prefix = run as root regardless of User setting.
+      # Needed because we mkdir/rm/cp files that may be owned by root
+      # from a previous generation.
+      preStart = "+${preStartScript}";
     };
   };
 }
