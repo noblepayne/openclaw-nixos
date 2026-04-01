@@ -116,6 +116,7 @@ in {
       group = cfg.group;
       home = stateDir;
       createHome = true;
+      shell = pkgs.runtimeShell;
     };
 
     users.groups."${cfg.group}" = {};
