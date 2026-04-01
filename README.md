@@ -76,4 +76,4 @@ To update the upstream OpenClaw pin and refresh the pruned lockfile:
 
 MIT License.
 
-Build infrastructure adapted from [nix-openclaw](https://github.com/nix-openclaw/nix-openclaw). Initial architecture inspired by [lattice](https://github.com/noblepayne/lattice).
+Build infrastructure adapted from [nix-openclaw](https://github.com/nix-openclaw/nix-openclaw).

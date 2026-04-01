@@ -2,12 +2,12 @@
 
 ## Overview
 
-`openclaw-nixos` is a minimal Nix flake that packages the [OpenClaw](https://github.com/openclaw/openclaw) gateway for NixOS servers. It is a fork of [nix-openclaw](https://github.com/nix-openclaw/nix-openclaw), stripped from 18,685 lines to ~1,100.
+`openclaw-nixos` is a minimal Nix flake that packages the [OpenClaw](https://github.com/openclaw/openclaw) gateway for NixOS servers. It is a fork of [nix-openclaw](https://github.com/nix-openclaw/nix-openclaw), stripped from ~18,700 lines to ~700.
 
 **What it provides:**
 - `packages.x86_64-linux.openclaw-gateway` — the built gateway binary
 - `nixosModules.default` — a NixOS module (`services.openclaw`)
-- `overlays.default` — an overlay for nixpkgs
+- `overlays.default` — an overlay providing `pkgs.openclaw` and `pkgs.openclaw-gateway`
 
 **What it doesn't do:**
 - No home-manager integration
@@ -15,22 +15,6 @@
 - No plugin catalog system
 - No auto-generated 15k-line config schema
 - No hourly CI auto-updater
-
-## Dependencies
-
-```
-flake.nix
-├── inputs.nixpkgs (NixOS/nixpkgs, nixos-unstable)
-├── inputs.openclaw (openclaw/openclaw, main branch)
-│   └── flake = false (source only, no flake outputs)
-└── outputs
-    ├── packages.x86_64-linux.openclaw-gateway
-    │   └── nix/packages/openclaw-gateway.nix
-    │       └── nix/lib/gateway-build.nix
-    ├── nixosModules.default
-    │   └── nix/modules/openclaw.nix
-    └── overlays.default
-```
 
 ## Build pipeline
 
@@ -46,7 +30,7 @@ flake.nix
 └───────────┬─────────────┘
             │
 ┌───────────▼─────────────┐
-│  fetchPnpmDeps          │  ← Downloads 1,157 tarballs (not 1,356)
+│  fetchPnpmDeps          │  ← Downloads ~1,157 tarballs (not ~1,356)
 │  (Nix store)            │
 └───────────┬─────────────┘
             │
@@ -71,9 +55,24 @@ flake.nix
 └─────────────────────────┘
 ```
 
+## Runtime services
+
+The NixOS module creates two services:
+
+1. **`openclaw-setup.service`** (oneshot, runs as root)
+   - Copies bundled extensions from the Nix store to `/var/lib/openclaw/dist/`
+   - Symlinks `node_modules` from the store into the mutable `dist/`
+   - Writes merged config to `/var/lib/openclaw/openclaw.json`
+   - Writes cron jobs to `/var/lib/openclaw/cron/jobs.json`
+   - Chowns the state directory to the service user
+
+2. **`openclaw.service`** (the gateway process)
+   - Runs as the `openclaw` user (with `bash` shell for exec/repl support)
+   - Hardened: `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome=true`
+
 ## Lockfile pruning
 
-The upstream `pnpm-lock.yaml` includes platform-specific binaries for every OS and architecture (win32, darwin, android, wasm, mac, etc.). Since we only target linux x86_64, we strip 199 unnecessary packages.
+The upstream `pnpm-lock.yaml` includes platform-specific binaries for every OS and architecture (win32, darwin, android, wasm, mac, etc.). Since we only target linux x86_64, we strip ~200 unnecessary packages.
 
 The pruner (`_tools/lockfile-pruner/prune.mjs`) uses `@pnpm/lockfile-file` to parse and write the lockfile — it never breaks pnpm's format. See `docs/lockfile-pruner.md` for details.
 
@@ -81,4 +80,4 @@ The pruner (`_tools/lockfile-pruner/prune.mjs`) uses `@pnpm/lockfile-file` to pa
 
 - **nix-openclaw**: The original Nix packaging (Unlicense). We copied and adapted their build scripts.
 - **openclaw**: The upstream application. We pull source from their GitHub repo.
-- **lattice**: Proof of concept that this simplified approach works. Their `openclaw.nix` was the template for our module.
+- **lattice**: Production instance that consumes and validates this module. Its config served as the template for the module's design.
