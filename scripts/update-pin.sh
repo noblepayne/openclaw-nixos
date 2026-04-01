@@ -12,7 +12,6 @@ set -euo pipefail
 #   # Copy the 'got:' hash into flake.nix pnpmDepsHash
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-OPENCLAW_DIR="${OPENCLAW_DIR:-/dev/shm/openclaw}"
 
 cd "$REPO_ROOT"
 
@@ -23,21 +22,27 @@ else
   nix flake update openclaw
 fi
 
-echo ">> Getting openclaw source path..."
-OPENCLAW_SRC=$(nix eval --raw '.#openclaw.outPath' 2>/dev/null || true)
-if [ -z "$OPENCLAW_SRC" ]; then
-  # Fallback: parse from flake.lock
-  OPENCLAW_SRC=$(jq -r '.nodes.openclaw.locked.rev' flake.lock)
-  echo "   Rev: $OPENCLAW_SRC"
-fi
+echo ">> Getting openclaw revision..."
+REV=$(jq -r '.nodes.openclaw.locked.rev' flake.lock)
+echo "   Rev: $REV"
+
+echo ">> Downloading upstream source..."
+TMPDIR=$(mktemp -d)
+curl -fSL "https://github.com/openclaw/openclaw/archive/${REV}.tar.gz" | tar xz -C "${TMPDIR}"
+UPSTREAM="${TMPDIR}/openclaw-${REV}"
 
 echo ">> Regenerating pruned lockfile..."
-node _tools/lockfile-pruner/prune.mjs "$OPENCLAW_DIR" "$REPO_ROOT"
+node _tools/lockfile-pruner/prune.mjs "$UPSTREAM" "$REPO_ROOT"
 mv "$REPO_ROOT/pnpm-lock.yaml" "$REPO_ROOT/pnpm-lock-pruned.yaml"
+
+echo ">> Cleanup..."
+rm -rf "$TMPDIR"
 
 echo ">> Done!"
 echo ""
 echo "Next steps:"
-echo "  1. nix build .#openclaw-gateway 2>&1 | grep 'got:'"
-echo "  2. Copy the 'got:' hash into flake.nix pnpmDepsHash"
-echo "  3. nix build .#openclaw-gateway  (verify it builds)"
+echo "  1. Set flake.nix pnpmDepsHash to \"\" (empty)"
+echo "  2. nix build .#openclaw-gateway.pnpmDeps 2>&1 | grep 'got:'"
+echo "  3. Copy the 'got:' hash into flake.nix pnpmDepsHash"
+echo "  4. nix build .#openclaw-gateway (verify it builds)"
+echo "  5. ./result/bin/openclaw --version (smoke test)"
