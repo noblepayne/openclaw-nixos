@@ -170,8 +170,8 @@ in {
     };
 
     systemd.services.openclaw = {
-      description = "OpenClaw AI Gateway";
-      wantedBy = ["multi-user.target"];
+      description = lib.mkDefault "OpenClaw AI Gateway";
+      wantedBy = lib.mkDefault ["multi-user.target"];
       after = ["network.target"];
 
       environment =
@@ -190,19 +190,19 @@ in {
         };
 
       serviceConfig = {
-        Type = "simple";
+        Type = lib.mkDefault "simple";
         User = cfg.user;
         Group = cfg.group;
-        WorkingDirectory = stateDir;
-        ExecStart = "${cfg.package}/bin/openclaw gateway";
-        Restart = "always";
-        RestartSec = 5;
+        WorkingDirectory = lib.mkDefault stateDir;
+        ExecStart = lib.mkDefault "${cfg.package}/bin/openclaw gateway";
+        Restart = lib.mkDefault "always";
+        RestartSec = lib.mkDefault 5;
 
         # Hardening
-        NoNewPrivileges = true;
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        PrivateTmp = true;
+        NoNewPrivileges = lib.mkDefault true;
+        ProtectSystem = lib.mkDefault "strict";
+        ProtectHome = lib.mkDefault true;
+        PrivateTmp = lib.mkDefault true;
         ReadWritePaths = [stateDir];
       };
 
