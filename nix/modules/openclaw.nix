@@ -205,8 +205,6 @@ in {
         PrivateTmp = lib.mkDefault true;
         ReadWritePaths = [stateDir];
       };
-
-      preStart = "chown -R ${cfg.user}:${cfg.group} ${stateDir}";
     };
   };
 }
