@@ -38,11 +38,15 @@
 
     nixosModules.default = ./nix/modules/openclaw.nix;
 
-    overlays.default = final: prev: {
-      openclaw-gateway = final.callPackage ./nix/packages/openclaw-gateway.nix {
+    overlays.default = final: _prev: let
+      drv = final.callPackage ./nix/packages/openclaw-gateway.nix {
         inherit prunedLockfile pnpmDepsHash;
         openclawSrc = openclaw;
       };
+    in {
+      inherit (drv.meta) openclaw-gateway;
+      openclaw-gateway = drv;
+      openclaw = drv;
     };
   };
 }
