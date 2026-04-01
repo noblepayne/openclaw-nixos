@@ -14,7 +14,6 @@
   cronDir = "${stateDir}/cron";
   cronJobsPath = "${cronDir}/jobs.json";
 
-  # Merge config: base (from file or attrset) + overlay (from attrset)
   configFileContent =
     if cfg.configFile != null
     then builtins.fromJSON (builtins.readFile cfg.configFile)
@@ -24,62 +23,6 @@
 
   hasConfig = cfg.config != {};
   hasCronJobs = cfg.cronJobs != {};
-
-  # Script that runs as root to set up state directory
-  # Uses + prefix in ExecStartPre to run regardless of User setting
-  setupScript = pkgs.writeShellScript "openclaw-setup" ''
-    # Remove old dist if it exists (may be from previous generation)
-    [ -d ${distDir} ] && rm -rf ${distDir}
-    mkdir -p ${distDir}
-    cp -r ${packageDist}/* ${distDir}/
-    ln -sfn ${packageNodeModules} ${distDir}/node_modules
-
-    # Write config if provided
-    if [ -n "${lib.optionalString hasConfig "yes" ""}" ]; then
-      mkdir -p $(dirname ${configPath})
-      cat > ${configPath}.tmp << 'CONFIG_EOF'
-  ${builtins.toJSON mergedConfig}
-  CONFIG_EOF
-      mv ${configPath}.tmp ${configPath}
-    fi
-
-    # Write cron jobs if provided
-    if [ -n "${lib.optionalString hasCronJobs "yes" ""}" ]; then
-      mkdir -p ${cronDir}
-      cat > ${cronJobsPath}.tmp << 'CRON_EOF'
-  ${builtins.toJSON cfg.cronJobs}
-  CRON_EOF
-      mv ${cronJobsPath}.tmp ${cronJobsPath}
-    fi
-
-    # Fix permissions
-    chown -R ${cfg.user}:${cfg.group} ${stateDir}
-  '';
-
-  # Build the preStart string: + prefix = run as root
-  preStartScript =
-    if cfg.mutableExtensionsDir
-    then "${setupScript}"
-    else if hasConfig || hasCronJobs
-    then let
-      steps = lib.filter (s: s != "") [
-        (lib.optionalString hasConfig ''
-          mkdir -p $(dirname ${configPath})
-          cat > ${configPath}.tmp << 'CONFIG_EOF'
-          ${builtins.toJSON mergedConfig}
-          CONFIG_EOF
-          mv ${configPath}.tmp ${configPath}
-        '')
-        (lib.optionalString hasCronJobs ''
-          mkdir -p ${cronDir}
-          cat > ${cronJobsPath}.tmp << 'CRON_EOF'
-          ${builtins.toJSON cfg.cronJobs}
-          CRON_EOF
-          mv ${cronJobsPath}.tmp ${cronJobsPath}
-        '')
-      ];
-    in lib.concatStringsSep "\n\n" steps
-    else "";
 in {
   options.services.openclaw = {
     enable = lib.mkEnableOption "OpenClaw gateway";
@@ -179,6 +122,53 @@ in {
 
     networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [cfg.port];
 
+    # Runs as root to set up mutable state from the Nix store.
+    # This is a separate oneshot service (runs as root, no sandboxing)
+    # that the main gateway service depends on.
+    systemd.services.openclaw-setup = {
+      description = "OpenClaw state setup";
+      serviceConfig = {
+        Type = "oneshot";
+        User = "root";
+        Group = "root";
+      };
+      wantedBy = ["openclaw.service"];
+      before = ["openclaw.service"];
+
+      script = let
+        setupExtensions = lib.optionalString cfg.mutableExtensionsDir ''
+          rm -rf ${distDir}
+          mkdir -p ${distDir}
+          cp -r ${packageDist}/* ${distDir}/
+          ln -sfn ${packageNodeModules} ${distDir}/node_modules
+        '';
+
+        setupConfig = lib.optionalString hasConfig ''
+          mkdir -p $(dirname ${configPath})
+          cat > ${configPath}.tmp << 'CONFIG_EOF'
+          ${builtins.toJSON mergedConfig}
+          CONFIG_EOF
+          mv ${configPath}.tmp ${configPath}
+        '';
+
+        setupCron = lib.optionalString hasCronJobs ''
+          mkdir -p ${cronDir}
+          cat > ${cronJobsPath}.tmp << 'CRON_EOF'
+          ${builtins.toJSON cfg.cronJobs}
+          CRON_EOF
+          mv ${cronJobsPath}.tmp ${cronJobsPath}
+        '';
+
+        steps = lib.filter (s: s != "") [
+          setupConfig
+          setupCron
+          setupExtensions
+          "chown -R ${cfg.user}:${cfg.group} ${stateDir}"
+        ];
+      in
+        lib.concatStringsSep "\n\n" steps;
+    };
+
     systemd.services.openclaw = {
       description = "OpenClaw AI Gateway";
       wantedBy = ["multi-user.target"];
@@ -216,10 +206,7 @@ in {
         ReadWritePaths = [stateDir];
       };
 
-      # + prefix = run as root regardless of User setting.
-      # Needed because we mkdir/rm/cp files that may be owned by root
-      # from a previous generation.
-      preStart = "+${preStartScript}";
+      preStart = "chown -R ${cfg.user}:${cfg.group} ${stateDir}";
     };
   };
 }
