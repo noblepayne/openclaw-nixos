@@ -1,18 +1,27 @@
 # openclaw-nixos
 
-NixOS module and package for [OpenClaw](https://github.com/openclaw/openclaw).
+A lean, NixOS-focused distribution of the [OpenClaw](https://github.com/openclaw/openclaw) AI agent gateway.
 
-Linux x86_64 only. No home-manager, no darwin, no plugin catalog. Just a gateway build and a systemd service.
+This flake provides a simplified, server-oriented build that strips away 18,000+ lines of desktop-specific complexity found in other distributions. It targets **Linux x86_64** exclusively, ensuring a predictable and efficient deployment for autonomous agent VMs.
 
-## Usage
+## Key Features
+
+- **Lean Build**: Focuses on the gateway and core runtime. No home-manager, no macOS cruft, no auto-generated 15k-line schema.
+- **Smart Dependency Pruning**: Uses a custom lockfile pruner to strip ~200 platform-specific binaries (Windows, Android, etc.) reducing build overhead and store bloat.
+- **NixOS Native**: Simple, robust NixOS module with hardening and state management based on real-world deployments.
+- **Deterministic**: Standardized build flow with verified pnpm dependency integrity.
+
+## Quick Start
+
+Add this flake to your system configuration:
 
 ```nix
-# flake.nix
 {
-  inputs.openclaw-nixos.url = "github:YOUR_ORG/openclaw-nixos";
+  inputs.openclaw-nixos.url = "github:noblepayne/openclaw-nixos";
 
   outputs = { nixpkgs, openclaw-nixos, ... }: {
-    nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
+    nixosConfigurations.my-agent = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
       modules = [
         openclaw-nixos.nixosModules.default
         {
@@ -20,9 +29,15 @@ Linux x86_64 only. No home-manager, no darwin, no plugin catalog. Just a gateway
             enable = true;
             port = 3000;
             config = {
-              channels.telegram.token = "BOT_TOKEN";
-              gateway.auth.token = "AUTH_TOKEN";
+              # Configuration via Nix attrsets
+              gateway.cors.origins = [ "https://dashboard.example.com" ];
+              memory.enabled = true;
             };
+            
+            # Use configFile for pre-existing JSON
+            # configFile = "/var/lib/openclaw/credentials/openclaw.json";
+            
+            openFirewall = true;
           };
         }
       ];
@@ -31,40 +46,34 @@ Linux x86_64 only. No home-manager, no darwin, no plugin catalog. Just a gateway
 }
 ```
 
-## Module options
+## Handling Secrets
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `services.openclaw.enable` | bool | false | Enable OpenClaw gateway |
-| `services.openclaw.package` | package | `pkgs.openclaw-gateway` | Gateway package |
-| `services.openclaw.port` | port | 3000 | Bind port |
-| `services.openclaw.bind` | str | "127.0.0.1" | Bind address |
-| `services.openclaw.config` | attrs | {} | OpenClaw config (merged with configFile) |
-| `services.openclaw.configFile` | path | null | Path to openclaw.json |
-| `services.openclaw.openFirewall` | bool | false | Open firewall for port |
-| `services.openclaw.user` | str | "openclaw" | System user |
-| `services.openclaw.group` | str | "openclaw" | System group |
+Sensitive credentials (API keys, bot tokens) should **not** be placed in the Nix `config` attrset as they will be world-readable in the Nix store. 
 
-## Updating the upstream pin
-
-```bash
-scripts/update-pin.sh
-```
-
-## Lockfile pruner
-
-The build uses a pruned pnpm lockfile that strips platform-specific binaries for non-linux targets. See [docs/lockfile-pruner.md](docs/lockfile-pruner.md).
+Recommended approaches:
+1.  **`EnvironmentFile`**: Define secrets in a file on the host and reference it (managed via the systemd service).
+2.  **`configFile`**: Point the module to a JSON file with restricted permissions already present on the server.
+3.  **Merged Config**: Use both! The Nix module will merge your `config` attrset on top of your `configFile`, allowing you to keep structure in Nix and secrets in a private file.
 
 ## Documentation
 
-- [Architecture](docs/architecture.md) — how it all fits together
-- [Pinning](docs/pinning.md) — how pins and updates work
-- [Build](docs/build.md) — how the Nix build works
-- [Module](docs/module.md) — NixOS module reference
-- [Lockfile Pruner](docs/lockfile-pruner.md) — platform-specific dependency pruning
+- [Architecture](docs/architecture.md) — How the lean build is structured.
+- [NixOS Module](docs/module.md) — Full reference for `services.openclaw` options.
+- [Nix Build](docs/build.md) — Deep dive into the pnpm-to-Nix pipeline.
+- [Pinning & Updates](docs/pinning.md) — Instructions for bumping upstream versions.
+- [Lockfile Pruner](docs/lockfile-pruner.md) — How we strip non-linux binaries.
 
-## License
+## Maintenance
 
-MIT
+To update the upstream OpenClaw pin and refresh the pruned lockfile:
 
-Build infrastructure adapted from [nix-openclaw](https://github.com/nix-openclaw/nix-openclaw) ([Unlicense](https://github.com/nix-openclaw/nix-openclaw/blob/main/LICENSE)).
+```bash
+# Pulls new SHA and runs the pruner
+./scripts/update-pin.sh
+```
+
+## Credits & License
+
+MIT License.
+
+Build infrastructure adapted from [nix-openclaw](https://github.com/nix-openclaw/nix-openclaw). Initial architecture inspired by [lattice](https://github.com/noblepayne/lattice).

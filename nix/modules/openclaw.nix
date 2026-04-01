@@ -102,7 +102,7 @@ in {
             description = "Cron jobs file format version";
           };
           jobs = lib.mkOption {
-            type = lib.types.listOf lib.types.attrsOf lib.types.anything;
+            type = lib.types.listOf (lib.types.attrsOf lib.types.anything);
             default = [];
             description = "List of cron job definitions";
           };

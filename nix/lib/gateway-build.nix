@@ -12,10 +12,8 @@
   git,
   zstd,
 }:
-
 # Shared build plumbing for OpenClaw gateway.
 # Adapted from nix-openclaw, linux x86_64 only.
-
 {
   pname,
   src,
@@ -25,9 +23,7 @@
   extraNativeBuildInputs ? [],
   extraBuildInputs ? [],
   extraEnv ? {},
-}:
-
-let
+}: let
   pnpmPlatform = stdenv.hostPlatform.node.platform;
   pnpmArch = stdenv.hostPlatform.node.arch;
 
@@ -63,23 +59,25 @@ let
     REMOVE_PACKAGE_MANAGER_FIELD_SH = "${../scripts/remove-package-manager-field.sh}";
     STDENV_SETUP = "${stdenv}/setup";
   };
-
 in {
   inherit version pnpmDeps pnpmPlatform pnpmArch nodeAddonApi;
 
-  nativeBuildInputs = [
-    nodejs_22
-    pnpm_10
-    pkg-config
-    jq
-    python3
-    node-gyp
-    zstd
-  ] ++ extraNativeBuildInputs;
+  nativeBuildInputs =
+    [
+      nodejs_22
+      pnpm_10
+      pkg-config
+      jq
+      python3
+      node-gyp
+      zstd
+    ]
+    ++ extraNativeBuildInputs;
 
   buildInputs = extraBuildInputs;
 
-  env = envBase
+  env =
+    envBase
     // (lib.optionalAttrs enableSharp {SHARP_IGNORE_GLOBAL_LIBVIPS = "1";})
     // extraEnv;
 }
