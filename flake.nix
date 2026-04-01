@@ -44,7 +44,6 @@
         openclawSrc = openclaw;
       };
     in {
-      inherit (drv.meta) openclaw-gateway;
       openclaw-gateway = drv;
       openclaw = drv;
     };
