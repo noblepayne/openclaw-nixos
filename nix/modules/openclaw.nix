@@ -10,22 +10,22 @@
   distDir = "${stateDir}/dist";
   packageDist = "${cfg.package}/lib/openclaw/dist";
   packageNodeModules = "${cfg.package}/lib/openclaw/node_modules";
+  configPath = "${stateDir}/openclaw.json";
+  cronDir = "${stateDir}/cron";
+  cronJobsPath = "${cronDir}/jobs.json";
 
-  # Merge config attrset and configFile into a single JSON file
-  configFile = let
-    hasAttrset = cfg.config != {};
-    hasFile = cfg.configFile != null;
-  in
-    if hasAttrset && hasFile
-    then
-      pkgs.writeText "openclaw.json" (builtins.toJSON (
-        (builtins.fromJSON (builtins.readFile cfg.configFile)) // cfg.config
-      ))
-    else if hasAttrset
-    then pkgs.writeText "openclaw.json" (builtins.toJSON cfg.config)
-    else if hasFile
-    then cfg.configFile
-    else null;
+  # Merge config: base (from file or attrset) + overlay (from attrset)
+  # Priority order: configFile < config attrset < environment overrides
+  configFileContent =
+    if cfg.configFile != null
+    then builtins.fromJSON (builtins.readFile cfg.configFile)
+    else {};
+
+  mergedConfig = lib.recursiveUpdate configFileContent cfg.config;
+
+  hasConfig = cfg.config != {};
+
+  hasCronJobs = cfg.cronJobs != {};
 in {
   options.services.openclaw = {
     enable = lib.mkEnableOption "OpenClaw gateway";
@@ -49,9 +49,9 @@ in {
     };
 
     config = lib.mkOption {
-      type = lib.types.attrs;
+      type = lib.types.attrsOf (lib.types.attrsOf lib.types.anything);
       default = {};
-      description = "OpenClaw configuration as a Nix attrset (merged with configFile if both set)";
+      description = "OpenClaw configuration as a Nix attrset";
       example = {
         channels.telegram.token = "BOT_TOKEN";
         gateway.auth.token = "AUTH_TOKEN";
@@ -61,7 +61,7 @@ in {
     configFile = lib.mkOption {
       type = lib.types.nullOr lib.types.path;
       default = null;
-      description = "Path to an openclaw.json config file (merged with config attrset if both set)";
+      description = "Path to an openclaw.json config file. Merged with config attrset if both set (config takes priority).";
     };
 
     openFirewall = lib.mkOption {
@@ -91,17 +91,37 @@ in {
         Disable only if your OpenClaw version has the upstream fix merged.
       '';
     };
+
+    cronJobs = lib.mkOption {
+      type = lib.types.submodule {
+        freeformType = lib.types.attrsOf lib.types.anything;
+        options = {
+          version = lib.mkOption {
+            type = lib.types.int;
+            default = 1;
+            description = "Cron jobs file format version";
+          };
+          jobs = lib.mkOption {
+            type = lib.types.listOf lib.types.attrsOf lib.types.anything;
+            default = [];
+            description = "List of cron job definitions";
+          };
+        };
+      };
+      default = {};
+      description = "Cron job definitions. Written to {stateDir}/cron/jobs.json";
+    };
   };
 
   config = lib.mkIf cfg.enable {
-    users.users.${cfg.user} = {
+    users.users."${cfg.user}" = {
       isSystemUser = true;
       group = cfg.group;
       home = stateDir;
       createHome = true;
     };
 
-    users.groups.${cfg.group} = {};
+    users.groups."${cfg.group}" = {};
 
     networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [cfg.port];
 
@@ -116,20 +136,18 @@ in {
           BIND_ADDRESS = cfg.bind;
           OPENCLAW_NIX_MODE = "1";
           HOME = stateDir;
+          OPENCLAW_CONFIG_PATH = configPath;
         }
-        // (lib.optionalAttrs (configFile != null) {
-          OPENCLAW_CONFIG_FILE = configFile;
-        })
-        // (lib.optionalAttrs cfg.mutableExtensionsDir {
+        // lib.optionalAttrs cfg.mutableExtensionsDir {
           OPENCLAW_BUNDLED_PLUGINS_DIR = extensionsDir;
-        });
+        };
 
       serviceConfig = {
         Type = "simple";
         User = cfg.user;
         Group = cfg.group;
         WorkingDirectory = stateDir;
-        ExecStart = "${cfg.package}/bin/openclaw";
+        ExecStart = "${cfg.package}/bin/openclaw gateway";
         Restart = "always";
         RestartSec = 5;
 
@@ -141,14 +159,28 @@ in {
         ReadWritePaths = [stateDir];
       };
 
+      environment.CONFIG_HASH = lib.mkIf hasConfig (builtins.hashString "sha256" (builtins.toJSON mergedConfig));
+
       preStart = let
-        configSetup = lib.optionalString (configFile != null) ''
-          mkdir -p ${stateDir}/.openclaw
-          cp ${configFile} ${stateDir}/.openclaw/openclaw.json
-          chmod 600 ${stateDir}/.openclaw/openclaw.json
+        setupConfig = lib.optionalString hasConfig ''
+          # Write merged config to state dir
+          mkdir -p $(dirname ${configPath})
+          cat > ${configPath}.tmp << 'CONFIG_EOF'
+          ${builtins.toJSON mergedConfig}
+          CONFIG_EOF
+          mv ${configPath}.tmp ${configPath}
         '';
 
-        extensionsSetup = lib.optionalString cfg.mutableExtensionsDir ''
+        setupCron = lib.optionalString hasCronJobs ''
+          # Write cron jobs
+          mkdir -p ${cronDir}
+          cat > ${cronJobsPath}.tmp << 'CRON_EOF'
+          ${builtins.toJSON cfg.cronJobs}
+          CRON_EOF
+          mv ${cronJobsPath}.tmp ${cronJobsPath}
+        '';
+
+        setupExtensions = lib.optionalString cfg.mutableExtensionsDir ''
           # Workaround for upstream plugin path boundary validation.
           # Nix store paths fail the "unsafe plugin manifest path" check.
           # Copy extensions to mutable storage and symlink node_modules.
@@ -158,15 +190,14 @@ in {
           ln -sfn ${packageNodeModules} ${distDir}/node_modules
         '';
 
-        bothSetup = lib.concatStringsSep "\n\n" (lib.filter (s: s != "") [
-          configSetup
-          extensionsSetup
+        steps = lib.filter (s: s != "") [
+          setupConfig
+          setupCron
+          setupExtensions
           "chown -R ${cfg.user}:${cfg.group} ${stateDir}"
-        ]);
+        ];
       in
-        lib.mkIf (configSetup != "" || extensionsSetup != "") ''
-          ${bothSetup}
-        '';
+        lib.mkIf (steps != []) (lib.concatStringsSep "\n\n" steps);
     };
   };
 }
