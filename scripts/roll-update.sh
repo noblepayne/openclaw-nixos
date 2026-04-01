@@ -104,7 +104,7 @@ mv "$REPO_ROOT/pnpm-lock.yaml" "$REPO_ROOT/pnpm-lock-pruned.yaml"
 log "Fetching pnpmDepsHash..."
 sed -i 's/pnpmDepsHash = "[^"]*"/pnpmDepsHash = ""/' flake.nix
 
-HASH=$(nix build .#openclaw-gateway.pnpmDeps 2>&1 | grep 'got:' | awk '{print $NF}') || true
+HASH=$(nix build .#openclaw-gateway.pnpmDeps 2>&1 | tee /dev/stderr | grep 'got:' | awk '{print $NF}') || true
 
 if [[ -z "$HASH" ]]; then
   warn "Failed to extract pnpmDepsHash."
@@ -119,7 +119,7 @@ sed -i "s|pnpmDepsHash = \"\"|pnpmDepsHash = \"${HASH}\"|" flake.nix
 VERSION="unknown"
 if [[ "$DO_BUILD" == "true" ]]; then
   log "Building openclaw-gateway..."
-  nix build .#openclaw-gateway
+  nix build .#openclaw-gateway 2>&1 | tee /dev/stderr
 
   log "Running validation..."
   VERSION=$(./result/bin/openclaw --version 2>&1) || true
