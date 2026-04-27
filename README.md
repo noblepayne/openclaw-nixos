@@ -56,10 +56,12 @@ Recommended approaches:
 2.  **`configFile`**: Point the module to a JSON file with restricted permissions already present on the server.
 3.  **Merged Config**: Use both! The Nix module will merge your `config` attrset on top of your `configFile`, allowing you to keep structure in Nix and secrets in a private file.
 
+The system adapter uses `services.openclaw`. The user-service adapter uses `services.openclawUser`.
+
 ## Documentation
 
 - [Architecture](docs/architecture.md) — How the lean build is structured.
-- [NixOS Module](docs/module.md) — Full reference for `services.openclaw` options.
+- [NixOS Module](docs/module.md) — Full reference for `services.openclaw` and `services.openclawUser`.
 - [Nix Build](docs/build.md) — Deep dive into the pnpm-to-Nix pipeline.
 - [Pinning & Updates](docs/pinning.md) — Instructions for bumping upstream versions.
 - [Lockfile Pruner](docs/lockfile-pruner.md) — How we strip non-linux binaries.

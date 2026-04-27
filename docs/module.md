@@ -32,16 +32,18 @@ Add this flake to your system configuration:
 
 ## Configuration Options
 
-The `systemService` and `userService` modules both define `services.openclaw`, but they target different service managers.
+The two service adapters intentionally use different option roots.
 
 - `openclaw-nixos.nixosModules.systemService`
   - runs OpenClaw as a system service
+  - config root: `services.openclaw`
   - creates the service user/group automatically
   - defaults `stateDir` to `/var/lib/openclaw`
 - `openclaw-nixos.nixosModules.userService`
   - runs OpenClaw as a `systemd.user` service for a configured user
+  - config root: `services.openclawUser`
   - defaults `stateDir` under the user's home directory
-  - expects the host to manage the target user account
+  - expects the host to manage the target user account via `users.users`
 
 ### `services.openclaw.enable`
 Type: `bool`, Default: `false`
@@ -122,14 +124,14 @@ For `systemService`: Type `string`, Default: `"openclaw"`
 
 System user to run the service as. Created automatically with `${pkgs.runtimeShell}` (bash on most systems) so that spawned exec sessions and REPL processes work correctly.
 
-For `userService`: required option naming the target user account that owns the generated state/config for the user service.
+For `userService`: use `services.openclawUser.user`, which must point at a user declared in `users.users`.
 
 ### `services.openclaw.group`
 For `systemService`: Type `string`, Default: `"openclaw"`
 
 System group for the service user.
 
-For `userService`: optional override for state file ownership. Defaults to the configured user's primary group when available, otherwise `users`.
+For `userService`: use `services.openclawUser.group`, which defaults to the configured user's primary group when available, otherwise `users`.
 
 ### `services.openclaw.stateDir`
 Type: `string`, Default: `"/var/lib/openclaw"` for `systemService`
@@ -137,14 +139,19 @@ Type: `string`, Default: `"/var/lib/openclaw"` for `systemService`
 Base state directory used for the rendered config, mutable extension workaround, and cron job file.
 
 ### `services.openclaw.homeDirectory`
-Only used by `userService`. Defaults to the configured user home when available.
+Only used by `userService` as `services.openclawUser.homeDirectory`. Defaults to the configured user home when available.
 
 Override the target home directory used for the user-service adapter.
 
 ### `services.openclaw.unitName`
-Only used by `userService`, Default: `"openclaw"`
+Only used by `userService` as `services.openclawUser.unitName`, Default: `"openclaw"`
 
 The `systemd.user` unit name to install for the gateway.
+
+### `services.openclawUser.enableLinger`
+Type: `bool`, Default: `true`
+
+Only used by `userService`. When enabled, the module sets `users.users.<name>.linger = true` so the user manager can keep the gateway alive without an active login session.
 
 ## Services Created
 
@@ -162,7 +169,7 @@ A oneshot service that runs as root before the gateway starts. Handles:
 On NixOS rebuild: the setup service re-runs because the unit file changes (new store paths). On manual service restart: the mutable extension directory is still valid — no re-copy needed.
 
 ### `systemd.user` service (`userService` only)
-The `userService` module installs `systemd.user.services.<unitName>` plus a root-owned activation script that prepares the selected user's state directory before login. This keeps the runtime process in the user manager while still rendering config and mutable extension state declaratively from NixOS.
+The `userService` module installs `systemd.user.services.<unitName>` plus a root-owned activation script that prepares the selected user's state directory before login. The unit is gated with `ConditionUser=<configured user>` and enables linger by default so a headless host can keep the user manager alive.
 
 ## Handling Secrets
 
@@ -171,6 +178,29 @@ Sensitive credentials should **not** go in the Nix `config` attrset (world-reada
 1. **`EnvironmentFile`**: Set secrets in a file on the host (e.g. `/var/lib/openclaw/credentials/openclaw.env`) and reference via `systemd.services.openclaw.serviceConfig.EnvironmentFile`.
 2. **`configFile`**: Point to a JSON file with restricted permissions.
 3. **Both**: The module merges `configFile` (base) + `config` attrset (overlay), letting you keep structure in Nix and secrets in a private file.
+
+## Example: user-service consumer
+
+```nix
+{
+  users.users.chris = {
+    isNormalUser = true;
+    extraGroups = [ "wheel" ];
+  };
+
+  imports = [ openclaw-nixos.nixosModules.userService ];
+
+  services.openclawUser = {
+    enable = true;
+    user = "chris";
+    port = 3000;
+    config = {
+      gateway.auth.token = "AUTH_TOKEN";
+      memory.enabled = true;
+    };
+  };
+}
+```
 
 ## Example: full server setup
 

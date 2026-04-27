@@ -2,10 +2,18 @@
   config,
   pkgs,
   lib,
+  openclawSystemDefaultPackage ? null,
   ...
 }: let
   openclawLib = import ../lib/default.nix {inherit lib;};
   cfg = config.services.openclaw;
+  defaultPackage =
+    if openclawSystemDefaultPackage != null then
+      openclawSystemDefaultPackage
+    else if pkgs ? openclaw-gateway then
+      pkgs.openclaw-gateway
+    else
+      pkgs.openclaw;
   stateDir = cfg.stateDir;
   extensionsDir = openclawLib.mkExtensionsDir stateDir;
   distDir = openclawLib.mkDistDir stateDir;
@@ -28,7 +36,8 @@ in {
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.openclaw;
+      default = defaultPackage;
+      defaultText = lib.literalExpression "openclaw-nixos.packages.<system>.openclaw-gateway";
       description = "OpenClaw gateway package to use";
     };
 
@@ -116,6 +125,19 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion =
+          !(stateDir == "/home"
+            || lib.hasPrefix "/home/" stateDir
+            || stateDir == "/root"
+            || lib.hasPrefix "/root/" stateDir
+            || stateDir == "/run/user"
+            || lib.hasPrefix "/run/user/" stateDir);
+        message = "services.openclaw.stateDir must stay outside /home, /root, and /run/user while systemService keeps ProtectHome=true. Use nixosModules.userService for home-scoped state.";
+      }
+    ];
+
     users.users."${cfg.user}" = {
       isSystemUser = true;
       group = cfg.group;

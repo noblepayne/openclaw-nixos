@@ -2,15 +2,31 @@
   config,
   pkgs,
   lib,
+  openclawUserDefaultPackage ? null,
   ...
 }: let
   openclawLib = import ../lib/default.nix {inherit lib;};
-  cfg = config.services.openclaw;
+  cfg = config.services.openclawUser;
+  defaultPackage =
+    if openclawUserDefaultPackage != null then
+      openclawUserDefaultPackage
+    else if pkgs ? openclaw-gateway then
+      pkgs.openclaw-gateway
+    else
+      pkgs.openclaw;
   hasConfiguredUser = cfg.user != null;
+  hasDeclaredUser =
+    hasConfiguredUser
+    && builtins.hasAttr cfg.user config.users.users
+    && (
+      config.users.users.${cfg.user}.isNormalUser
+      || config.users.users.${cfg.user}.isSystemUser
+      || config.users.users.${cfg.user}.uid != null
+    );
   resolvedHomeDirectory =
     if cfg.homeDirectory != null then
       cfg.homeDirectory
-    else if hasConfiguredUser && builtins.hasAttr cfg.user config.users.users && config.users.users.${cfg.user}.home != null then
+    else if hasDeclaredUser && config.users.users.${cfg.user}.home != null then
       config.users.users.${cfg.user}.home
     else if hasConfiguredUser then
       "/home/${cfg.user}"
@@ -19,7 +35,7 @@
   resolvedGroup =
     if cfg.group != null then
       cfg.group
-    else if hasConfiguredUser && builtins.hasAttr cfg.user config.users.users && config.users.users.${cfg.user}.group != null then
+    else if hasDeclaredUser && config.users.users.${cfg.user}.group != null then
       config.users.users.${cfg.user}.group
     else
       "users";
@@ -45,12 +61,13 @@
   hasCronJobs = cfg.cronJobs != { };
 in
 {
-  options.services.openclaw = {
+  options.services.openclawUser = {
     enable = lib.mkEnableOption "OpenClaw gateway user service";
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.openclaw;
+      default = defaultPackage;
+      defaultText = lib.literalExpression "openclaw-nixos.packages.<system>.openclaw-gateway";
       description = "OpenClaw gateway package to use";
     };
 
@@ -137,15 +154,27 @@ in
       default = "openclaw";
       description = "systemd user unit name for the OpenClaw gateway.";
     };
+
+    enableLinger = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Enable linger for the configured user so the gateway can run without an active login session.";
+    };
   };
 
   config = lib.mkIf cfg.enable {
     assertions = [
       {
         assertion = cfg.user != null;
-        message = "services.openclaw.user must be set when using the userService module.";
+        message = "services.openclawUser.user must be set when using the userService module.";
+      }
+      {
+        assertion = hasDeclaredUser;
+        message = "services.openclawUser.user must reference a user declared in users.users so the module can resolve home and linger settings.";
       }
     ];
+
+    users.users.${cfg.user}.linger = lib.mkDefault cfg.enableLinger;
 
     system.activationScripts."openclaw-user-setup-${cfg.user}" = let
       setupExtensions = lib.optionalString cfg.mutableExtensionsDir ''
@@ -186,6 +215,7 @@ in
       description = "OpenClaw AI Gateway";
       wantedBy = [ "default.target" ];
       after = [ "network.target" ];
+      unitConfig.ConditionUser = cfg.user;
       serviceConfig = {
         Type = "simple";
         ExecStart = "${cfg.package}/bin/openclaw gateway";

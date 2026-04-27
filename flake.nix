@@ -31,6 +31,20 @@
       inherit prunedLockfile pnpmDepsHash;
       openclawSrc = openclaw;
     };
+    mkSystemModule = path: {
+      pkgs,
+      ...
+    }: {
+      _module.args.openclawSystemDefaultPackage = self.packages.${pkgs.system}.openclaw-gateway;
+      imports = [ path ];
+    };
+    mkUserModule = path: {
+      pkgs,
+      ...
+    }: {
+      _module.args.openclawUserDefaultPackage = self.packages.${pkgs.system}.openclaw-gateway;
+      imports = [ path ];
+    };
   in {
     packages.${system} = {
       inherit openclaw-gateway;
@@ -40,9 +54,9 @@
     lib = openclawLib;
 
     nixosModules = {
-      default = ./nix/modules/openclaw.nix;
-      systemService = ./nix/modules/openclaw.nix;
-      userService = ./nix/modules/openclaw-user.nix;
+      default = mkSystemModule ./nix/modules/openclaw.nix;
+      systemService = mkSystemModule ./nix/modules/openclaw.nix;
+      userService = mkUserModule ./nix/modules/openclaw-user.nix;
     };
 
     overlays.default = final: _prev: let

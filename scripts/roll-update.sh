@@ -66,10 +66,12 @@ resolve_tag_commit() {
 }
 
 ensure_pruner_deps() {
-  if [[ ! -d "$PRUNER_DIR/node_modules" ]]; then
-    log "Installing lockfile-pruner dependencies"
-    (cd "$PRUNER_DIR" && npm install --ignore-scripts --no-package-lock)
+  if [[ ! -f "$PRUNER_DIR/package-lock.json" ]]; then
+    warn "Missing $PRUNER_DIR/package-lock.json"
+    exit 1
   fi
+  log "Installing lockfile-pruner dependencies from package-lock.json"
+  (cd "$PRUNER_DIR" && npm ci --ignore-scripts --no-audit --no-fund)
 }
 
 update_hash() {

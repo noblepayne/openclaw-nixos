@@ -8,7 +8,7 @@
 - `packages.x86_64-linux.openclaw-gateway` — the built gateway binary
 - `lib` — shared config/state rendering helpers
 - `nixosModules.systemService` — a system-level NixOS module (`services.openclaw`)
-- `nixosModules.userService` — a user-service NixOS module (`services.openclaw`)
+- `nixosModules.userService` — a user-service NixOS module (`services.openclawUser`)
 - `nixosModules.default` — alias of `systemService`
 - `overlays.default` — an overlay providing `pkgs.openclaw` and `pkgs.openclaw-gateway`
 
