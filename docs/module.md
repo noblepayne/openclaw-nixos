@@ -44,6 +44,9 @@ The two service adapters intentionally use different option roots.
   - config root: `services.openclawUser`
   - defaults `stateDir` under the user's home directory
   - expects the host to manage the target user account via `users.users`
+- `openclaw-nixos.nixosModules.profileChat`
+- `openclaw-nixos.nixosModules.profileBrowserAutomation`
+- `openclaw-nixos.nixosModules.profileAcp`
 
 Both adapters consume an OpenClaw package, but the preferred interface for bundled plugins is the declarative module surface:
 
@@ -81,6 +84,15 @@ openclaw-nixos.lib.mkBundledPluginsPackage {
   pluginIds = [ "telegram" ];
 }
 ```
+
+For shared baselines, upstream also exposes reusable plugin profiles:
+
+- `openclaw-nixos.lib.pluginProfiles.chat`
+- `openclaw-nixos.lib.pluginProfiles.browserAutomation`
+- `openclaw-nixos.lib.pluginProfiles.acp`
+- `openclaw-nixos.lib.mergePluginProfiles`
+
+Those can be used either through `nixosModules.profile*` imports or by composing the returned attrsets directly before assigning them to `services.openclaw` or `services.openclawUser`.
 
 ### `services.openclaw.enable`
 Type: `bool`, Default: `false`
@@ -163,6 +175,54 @@ When `stageRuntimeDeps = true`, the module automatically wraps the configured pa
 Type: `listOf str`, Default: `[]`
 
 Additional bundled plugin IDs to keep in the filtered bundled-plugin tree without declaring them as enabled plugins in generated config. This is useful for support surfaces such as `speech-core`.
+
+### Shared plugin profiles
+
+The upstream flake also exposes reusable plugin baselines that downstreams can import or merge:
+
+- `openclaw-nixos.lib.pluginProfiles.chat`
+- `openclaw-nixos.lib.pluginProfiles.browserAutomation`
+- `openclaw-nixos.lib.pluginProfiles.acp`
+- `openclaw-nixos.lib.mergePluginProfiles`
+
+These profiles are intentionally generic. They set shared bundled plugin defaults, but they do not encode host-specific local plugins, secrets, or policy.
+
+Example using module imports:
+
+```nix
+{
+  imports = [
+    openclaw-nixos.nixosModules.systemService
+    openclaw-nixos.nixosModules.profileChat
+    openclaw-nixos.nixosModules.profileBrowserAutomation
+  ];
+
+  services.openclaw = {
+    enable = true;
+    bundledPlugins.discord.enable = lib.mkForce false;
+  };
+}
+```
+
+Example using plain attrset composition:
+
+```nix
+let
+  sharedProfile =
+    openclaw-nixos.lib.mergePluginProfiles [
+      openclaw-nixos.lib.pluginProfiles.chat
+      openclaw-nixos.lib.pluginProfiles.acp
+    ];
+in {
+  services.openclaw =
+    sharedProfile
+    // {
+      enable = true;
+      localPlugins.my-memory.package = myMemoryPlugin;
+      plugins.slots.memory = "my-memory";
+    };
+}
+```
 
 ### `services.openclaw.localPlugins`
 Type: `attrsOf submodule`, Default: `{}`

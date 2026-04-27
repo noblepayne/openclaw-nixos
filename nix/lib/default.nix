@@ -155,6 +155,95 @@ let
       )
     );
 
+  mkPluginProfile =
+    {
+      bundledPlugins ? { },
+      extraBundledPluginIds ? [ ],
+      localPlugins ? { },
+      plugins ? { },
+      config ? { },
+      cronJobs ? { },
+    }:
+    {
+      inherit
+        bundledPlugins
+        extraBundledPluginIds
+        localPlugins
+        plugins
+        config
+        cronJobs
+        ;
+    };
+
+  mergePluginProfiles =
+    profiles:
+    let
+      mergeOne =
+        acc: profile:
+        let
+          merged = lib.recursiveUpdate acc profile;
+          accPlugins = acc.plugins or { };
+          profilePlugins = profile.plugins or { };
+          mergedPlugins = merged.plugins or { };
+        in
+        merged
+        // {
+          extraBundledPluginIds =
+            lib.unique (
+              (acc.extraBundledPluginIds or [ ])
+              ++ (profile.extraBundledPluginIds or [ ])
+            );
+          plugins =
+            mergedPlugins
+            // (lib.optionalAttrs (mergedPlugins ? allow || accPlugins ? allow || profilePlugins ? allow) {
+              allow =
+                lib.unique (
+                  (accPlugins.allow or [ ])
+                  ++ (profilePlugins.allow or [ ])
+                );
+            });
+        };
+    in
+    lib.foldl' mergeOne { } profiles;
+
+  pluginProfiles =
+    let
+      chat = mkPluginProfile {
+        extraBundledPluginIds = [ "speech-core" ];
+        bundledPlugins.telegram = {
+          enable = lib.mkDefault true;
+          stageRuntimeDeps = lib.mkDefault true;
+        };
+        bundledPlugins.discord = {
+          enable = lib.mkDefault true;
+          stageRuntimeDeps = lib.mkDefault true;
+        };
+      };
+      browserAutomation = mkPluginProfile {
+        bundledPlugins.browser = {
+          enable = lib.mkDefault true;
+          stageRuntimeDeps = lib.mkDefault true;
+        };
+      };
+      acp = mkPluginProfile {
+        bundledPlugins.acpx = {
+          enable = lib.mkDefault true;
+          stageRuntimeDeps = lib.mkDefault true;
+        };
+      };
+    in
+    rec {
+      inherit
+        chat
+        browserAutomation
+        acp
+        ;
+
+      default = mergePluginProfiles [
+        chat
+      ];
+    };
+
   withBundledRuntimeDeps =
     {
       package,
@@ -198,6 +287,9 @@ in
     enabledBundledPluginIds
     bundledPluginPackageIds
     bundledRuntimeDepsPluginIds
+    mkPluginProfile
+    mergePluginProfiles
+    pluginProfiles
     withBundledRuntimeDeps
     withBundledRuntimeDepsFromPlugins
     mkConfigPath

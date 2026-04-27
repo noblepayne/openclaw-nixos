@@ -106,8 +106,25 @@
         self.packages.${pkgs.stdenv.hostPlatform.system}.openclaw-gateway;
       imports = [ path ];
     };
+    mkProfileModule = profile: {
+      lib,
+      options,
+      ...
+    }: {
+      config = lib.mkMerge (
+        lib.optional (options ? services && options.services ? openclaw) {
+          services.openclaw = profile;
+        }
+        ++ lib.optional (options ? services && options.services ? openclawUser) {
+          services.openclawUser = profile;
+        }
+      );
+    };
     systemServiceModule = mkSystemModule ./nix/modules/openclaw.nix;
     userServiceModule = mkUserModule ./nix/modules/openclaw-user.nix;
+    profileChatModule = mkProfileModule openclawLib.pluginProfiles.chat;
+    profileBrowserAutomationModule = mkProfileModule openclawLib.pluginProfiles.browserAutomation;
+    profileAcpModule = mkProfileModule openclawLib.pluginProfiles.acp;
     checks = import ./nix/checks/default.nix {
       inherit
         nixpkgs
@@ -116,6 +133,7 @@
         openclaw-gateway
         systemServiceModule
         userServiceModule
+        profileChatModule
         ;
     };
   in {
@@ -132,6 +150,9 @@
       default = systemServiceModule;
       systemService = systemServiceModule;
       userService = userServiceModule;
+      profileChat = profileChatModule;
+      profileBrowserAutomation = profileBrowserAutomationModule;
+      profileAcp = profileAcpModule;
     };
 
     overlays.default = final: _prev: let

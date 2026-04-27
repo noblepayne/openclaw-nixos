@@ -9,6 +9,7 @@ This flake provides a simplified, server-oriented build that strips away 18,000+
 - **Lean Build**: Focuses on the gateway and core runtime. No home-manager, no macOS cruft, no auto-generated 15k-line schema.
 - **Smart Dependency Pruning**: Uses a custom lockfile pruner to strip ~200 platform-specific binaries (Windows, Android, etc.) reducing build overhead and store bloat.
 - **Composable Surface**: Exposes a package, shared rendering library, and both system-service and user-service NixOS modules.
+- **Composable Plugin Profiles**: Exposes reusable plugin-profile attrsets and profile modules so downstreams can share a baseline and extend it per host.
 - **Allow-Only Bundled Plugins**: Builds a filtered bundled-plugin artifact so downstreams can expose only the bundled plugins they explicitly enable.
 - **Build-Time Runtime Deps**: Can selectively stage bundled plugin runtime dependencies during the package build, so chosen packaged plugins avoid npm installs at service startup.
 - **NixOS Native**: Simple, robust system-service module with hardening and state management based on real-world deployments.
@@ -92,6 +93,27 @@ If you set `bundledPlugins.<id>.stageRuntimeDeps = true`, the module now does tw
 That keeps packaged deployments off the runtime `npm install` path while still giving OpenClaw a writable external stage root.
 
 If a downstream needs an extra bundled plugin surface on disk without declaring it as an enabled plugin in generated config, set `extraBundledPluginIds = [ "…" ];`. This is intended for support surfaces such as `speech-core`.
+
+For shared baselines, upstream also exposes reusable plugin profiles through both `lib` and module outputs. A downstream can import a profile module and still add or override host-specific plugins normally:
+
+```nix
+{
+  imports = [
+    openclaw-nixos.nixosModules.systemService
+    openclaw-nixos.nixosModules.profileChat
+    openclaw-nixos.nixosModules.profileBrowserAutomation
+  ];
+
+  services.openclaw = {
+    enable = true;
+    bundledPlugins.discord.enable = lib.mkForce false;
+    localPlugins.my-memory.package = myMemoryPlugin;
+    plugins.slots.memory = "my-memory";
+  };
+}
+```
+
+If you prefer to compose profiles in plain Nix before assigning them to a service, use `openclaw-nixos.lib.pluginProfiles` and `openclaw-nixos.lib.mergePluginProfiles`.
 
 For packaged local plugins, build a plugin derivation once and attach it declaratively:
 

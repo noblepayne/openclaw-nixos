@@ -5,6 +5,7 @@
   openclaw-gateway,
   systemServiceModule,
   userServiceModule,
+  profileChatModule,
 }:
 let
   lib = nixpkgs.lib;
@@ -236,6 +237,25 @@ let
   systemEnvironment = systemModuleEval.config.systemd.services.openclaw.environment;
   userActivationScript = userModuleEval.config.system.activationScripts."openclaw-user-setup-chris".text;
   userEnvironment = userModuleEval.config.systemd.user.services.openclaw.environment;
+
+  profileModuleEval =
+    nixpkgs.lib.nixosSystem {
+      modules = [
+        {
+          nixpkgs.hostPlatform = system;
+          system.stateVersion = "26.05";
+        }
+        systemServiceModule
+        profileChatModule
+        (
+          { ... }:
+          {
+            services.openclaw.enable = true;
+            services.openclaw.bundledPlugins.discord.enable = lib.mkForce false;
+          }
+        )
+      ];
+    };
 in
 ({
   lib-render-plugins =
@@ -269,6 +289,22 @@ in
       "browser"
       "telegram"
     ];
+    assert openclawLib.pluginProfiles.chat.extraBundledPluginIds == [ "speech-core" ];
+    assert (openclawLib.mergePluginProfiles [
+      openclawLib.pluginProfiles.chat
+      openclawLib.pluginProfiles.acp
+      {
+        plugins.allow = [ "custom-plugin" ];
+      }
+    ]).extraBundledPluginIds == [ "speech-core" ];
+    assert (openclawLib.mergePluginProfiles [
+      {
+        plugins.allow = [ "alpha" ];
+      }
+      {
+        plugins.allow = [ "beta" "alpha" ];
+      }
+    ]).plugins.allow == [ "alpha" "beta" ];
     pkgs.runCommand "openclaw-lib-render-plugins-check" { } "touch $out";
 
   local-plugin-package-basic = pkgs.runCommand "openclaw-local-plugin-basic-check" {
@@ -330,6 +366,12 @@ in
     assert lib.hasInfix "node_modules/openclaw" userActivationScript;
     assert lib.hasInfix "/home/chris/.local/share/openclaw/extensions/fixture-no-runtime-deps" userActivationScript;
     pkgs.runCommand "openclaw-module-eval-user-service-check" { } "touch $out";
+
+  module-eval-plugin-profile =
+    assert profileModuleEval.config.services.openclaw.bundledPlugins.telegram.enable;
+    assert !profileModuleEval.config.services.openclaw.bundledPlugins.discord.enable;
+    assert profileModuleEval.config.services.openclaw.extraBundledPluginIds == [ "speech-core" ];
+    pkgs.runCommand "openclaw-module-eval-plugin-profile-check" { } "touch $out";
 
   module-negative-assertions =
     assert !invalidSystemStateEval.success;

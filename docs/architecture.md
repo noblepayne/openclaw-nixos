@@ -8,8 +8,10 @@
 - `packages.x86_64-linux.openclaw-gateway` — the built gateway binary
 - `packages.x86_64-linux.openclaw-bundled-runtime-deps` — a package-scoped bundled runtime-deps artifact
 - `lib` — shared config/state rendering helpers
+- `lib.pluginProfiles` — reusable plugin baseline attrsets for downstream composition
 - `nixosModules.systemService` — a system-level NixOS module (`services.openclaw`)
 - `nixosModules.userService` — a user-service NixOS module (`services.openclawUser`)
+- `nixosModules.profileChat`, `profileBrowserAutomation`, `profileAcp` — thin plugin-profile modules that can apply shared defaults to either adapter
 - `nixosModules.default` — alias of `systemService`
 - `overlays.default` — an overlay providing `pkgs.openclaw` and `pkgs.openclaw-gateway`
 
@@ -78,6 +80,21 @@ The modules then assemble the live runtime root from those artifacts before star
 ## Runtime services
 
 The service adapters share the same package and rendering layer, but differ in ownership and activation style.
+
+## Plugin profiles
+
+Plugin ownership is meant to layer cleanly:
+
+- upstream exposes the plugin interface and reusable profile fragments
+- a shared downstream module can define a common baseline
+- each host can add, disable, or override plugins declaratively
+
+`openclaw-nixos` now exposes both:
+
+- `lib.pluginProfiles.*` for plain attrset composition
+- `nixosModules.profile*` for import-based profile layering
+
+These profiles intentionally stay generic. They are not host policy and should not encode Nomad-specific local plugins or secrets.
 
 ### `systemService`
 
