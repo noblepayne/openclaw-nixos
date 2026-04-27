@@ -17,6 +17,7 @@
   }: let
     system = "x86_64-linux";
     pkgs = nixpkgs.legacyPackages.${system};
+    openclawLib = import ./nix/lib/default.nix {lib = nixpkgs.lib;};
 
     # The pruned lockfile lives in our repo
     prunedLockfile = ./pnpm-lock-pruned.yaml;
@@ -36,7 +37,13 @@
       default = openclaw-gateway;
     };
 
-    nixosModules.default = ./nix/modules/openclaw.nix;
+    lib = openclawLib;
+
+    nixosModules = {
+      default = ./nix/modules/openclaw.nix;
+      systemService = ./nix/modules/openclaw.nix;
+      userService = ./nix/modules/openclaw-user.nix;
+    };
 
     overlays.default = final: _prev: let
       drv = final.callPackage ./nix/packages/openclaw-gateway.nix {

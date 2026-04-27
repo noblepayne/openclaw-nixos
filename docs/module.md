@@ -12,7 +12,7 @@ Add this flake to your system configuration:
     nixosConfigurations.my-agent = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
       modules = [
-        openclaw-nixos.nixosModules.default
+        openclaw-nixos.nixosModules.systemService
         {
           services.openclaw = {
             enable = true;
@@ -31,6 +31,17 @@ Add this flake to your system configuration:
 ```
 
 ## Configuration Options
+
+The `systemService` and `userService` modules both define `services.openclaw`, but they target different service managers.
+
+- `openclaw-nixos.nixosModules.systemService`
+  - runs OpenClaw as a system service
+  - creates the service user/group automatically
+  - defaults `stateDir` to `/var/lib/openclaw`
+- `openclaw-nixos.nixosModules.userService`
+  - runs OpenClaw as a `systemd.user` service for a configured user
+  - defaults `stateDir` under the user's home directory
+  - expects the host to manage the target user account
 
 ### `services.openclaw.enable`
 Type: `bool`, Default: `false`
@@ -107,14 +118,33 @@ Type: `bool`, Default: `false`
 Open the firewall for the configured port.
 
 ### `services.openclaw.user`
-Type: `string`, Default: `"openclaw"`
+For `systemService`: Type `string`, Default: `"openclaw"`
 
 System user to run the service as. Created automatically with `${pkgs.runtimeShell}` (bash on most systems) so that spawned exec sessions and REPL processes work correctly.
 
+For `userService`: required option naming the target user account that owns the generated state/config for the user service.
+
 ### `services.openclaw.group`
-Type: `string`, Default: `"openclaw"`
+For `systemService`: Type `string`, Default: `"openclaw"`
 
 System group for the service user.
+
+For `userService`: optional override for state file ownership. Defaults to the configured user's primary group when available, otherwise `users`.
+
+### `services.openclaw.stateDir`
+Type: `string`, Default: `"/var/lib/openclaw"` for `systemService`
+
+Base state directory used for the rendered config, mutable extension workaround, and cron job file.
+
+### `services.openclaw.homeDirectory`
+Only used by `userService`. Defaults to the configured user home when available.
+
+Override the target home directory used for the user-service adapter.
+
+### `services.openclaw.unitName`
+Only used by `userService`, Default: `"openclaw"`
+
+The `systemd.user` unit name to install for the gateway.
 
 ## Services Created
 
@@ -130,6 +160,9 @@ A oneshot service that runs as root before the gateway starts. Handles:
 - Chowns state directory to the service user
 
 On NixOS rebuild: the setup service re-runs because the unit file changes (new store paths). On manual service restart: the mutable extension directory is still valid — no re-copy needed.
+
+### `systemd.user` service (`userService` only)
+The `userService` module installs `systemd.user.services.<unitName>` plus a root-owned activation script that prepares the selected user's state directory before login. This keeps the runtime process in the user manager while still rendering config and mutable extension state declaratively from NixOS.
 
 ## Handling Secrets
 

@@ -4,24 +4,23 @@
   lib,
   ...
 }: let
+  openclawLib = import ../lib/default.nix {inherit lib;};
   cfg = config.services.openclaw;
-  stateDir = "/var/lib/openclaw";
-  extensionsDir = "${stateDir}/dist/extensions";
-  distDir = "${stateDir}/dist";
+  stateDir = cfg.stateDir;
+  extensionsDir = openclawLib.mkExtensionsDir stateDir;
+  distDir = openclawLib.mkDistDir stateDir;
   packageDist = "${cfg.package}/lib/openclaw/dist";
   packageNodeModules = "${cfg.package}/lib/openclaw/node_modules";
-  configPath = "${stateDir}/openclaw.json";
-  cronDir = "${stateDir}/cron";
-  cronJobsPath = "${cronDir}/jobs.json";
+  configPath = openclawLib.mkConfigPath stateDir;
+  cronDir = openclawLib.mkCronDir stateDir;
+  cronJobsPath = openclawLib.mkCronJobsPath stateDir;
 
-  configFileContent =
-    if cfg.configFile != null
-    then builtins.fromJSON (builtins.readFile cfg.configFile)
-    else {};
+  mergedConfig = openclawLib.mergeConfig {
+    inherit (cfg) configFile;
+    inherit (cfg) config;
+  };
 
-  mergedConfig = lib.recursiveUpdate configFileContent cfg.config;
-
-  hasConfig = cfg.config != {};
+  hasConfig = cfg.config != {} || cfg.configFile != null;
   hasCronJobs = cfg.cronJobs != {};
 in {
   options.services.openclaw = {
@@ -77,6 +76,12 @@ in {
       type = lib.types.str;
       default = "openclaw";
       description = "Group to run OpenClaw as";
+    };
+
+    stateDir = lib.mkOption {
+      type = lib.types.str;
+      default = "/var/lib/openclaw";
+      description = "State directory for OpenClaw runtime files and generated config.";
     };
 
     mutableExtensionsDir = lib.mkOption {

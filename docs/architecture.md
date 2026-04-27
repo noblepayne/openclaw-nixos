@@ -6,7 +6,10 @@
 
 **What it provides:**
 - `packages.x86_64-linux.openclaw-gateway` — the built gateway binary
-- `nixosModules.default` — a NixOS module (`services.openclaw`)
+- `lib` — shared config/state rendering helpers
+- `nixosModules.systemService` — a system-level NixOS module (`services.openclaw`)
+- `nixosModules.userService` — a user-service NixOS module (`services.openclaw`)
+- `nixosModules.default` — alias of `systemService`
 - `overlays.default` — an overlay providing `pkgs.openclaw` and `pkgs.openclaw-gateway`
 
 **What it doesn't do:**
@@ -14,7 +17,6 @@
 - No macOS support
 - No plugin catalog system
 - No auto-generated 15k-line config schema
-- No hourly CI auto-updater
 
 ## Build pipeline
 

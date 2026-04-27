@@ -2,13 +2,14 @@
 
 A lean, NixOS-focused distribution of the [OpenClaw](https://github.com/openclaw/openclaw) AI agent gateway.
 
-This flake provides a simplified, server-oriented build that strips away 18,000+ lines of desktop-specific complexity found in other distributions. It targets **Linux x86_64** exclusively, ensuring a predictable and efficient deployment for autonomous agent VMs.
+This flake provides a simplified, server-oriented build that strips away 18,000+ lines of desktop-specific complexity found in other distributions. It targets **Linux x86_64** exclusively, while exposing composable Nix pieces that downstream hosts can combine into either a system-level service or a user-level service.
 
 ## Key Features
 
 - **Lean Build**: Focuses on the gateway and core runtime. No home-manager, no macOS cruft, no auto-generated 15k-line schema.
 - **Smart Dependency Pruning**: Uses a custom lockfile pruner to strip ~200 platform-specific binaries (Windows, Android, etc.) reducing build overhead and store bloat.
-- **NixOS Native**: Simple, robust NixOS module with hardening and state management based on real-world deployments.
+- **Composable Surface**: Exposes a package, shared rendering library, and both system-service and user-service NixOS modules.
+- **NixOS Native**: Simple, robust system-service module with hardening and state management based on real-world deployments.
 - **Deterministic**: Standardized build flow with verified pnpm dependency integrity.
 
 ## Quick Start
@@ -23,7 +24,7 @@ Add this flake to your system configuration:
     nixosConfigurations.my-agent = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
       modules = [
-        openclaw-nixos.nixosModules.default
+        openclaw-nixos.nixosModules.systemService
         {
           services.openclaw = {
             enable = true;
