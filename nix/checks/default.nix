@@ -9,6 +9,16 @@
 let
   lib = nixpkgs.lib;
   pkgs = nixpkgs.legacyPackages.${system};
+  vmTests = import ../tests/default.nix {
+    inherit
+      nixpkgs
+      system
+      openclawLib
+      openclaw-gateway
+      systemServiceModule
+      userServiceModule
+      ;
+  };
 
   fixtureNoRuntimeDeps = ../../tests/fixtures/plugins/no-runtime-deps;
   fixtureWithRuntimeDeps = ../../tests/fixtures/plugins/with-runtime-deps;
@@ -227,7 +237,7 @@ let
   userActivationScript = userModuleEval.config.system.activationScripts."openclaw-user-setup-chris".text;
   userEnvironment = userModuleEval.config.systemd.user.services.openclaw.environment;
 in
-{
+({
   lib-render-plugins =
     assert renderedPluginsConfig.plugins.allow == [
       "manual-plugin"
@@ -363,3 +373,4 @@ in
 
   script-syntax = syntaxCheck;
 }
+// vmTests)

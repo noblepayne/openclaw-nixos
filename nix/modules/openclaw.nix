@@ -382,21 +382,21 @@ in {
 
       setupLocalPlugins = ''
         mkdir -p ${localPluginsDir}
-          if [ -f ${managedLocalPluginsManifest} ]; then
-            while IFS= read -r plugin_id; do
-              [ -n "$plugin_id" ] || continue
-              rm -rf ${localPluginsDir}/"$plugin_id"
-            done < ${managedLocalPluginsManifest}
-          fi
-          cat > ${managedLocalPluginsManifest}.tmp << 'LOCAL_PLUGINS_EOF'
-          ${lib.concatStringsSep "\n" (builtins.attrNames enabledLocalPlugins)}
-          LOCAL_PLUGINS_EOF
-          mv ${managedLocalPluginsManifest}.tmp ${managedLocalPluginsManifest}
-          ${lib.concatStringsSep "\n" (lib.mapAttrsToList (pluginId: pluginCfg: ''
-            mkdir -p ${openclawLib.mkLocalPluginInstallPath stateDir pluginId}
-            cp -r ${pluginCfg.package}/. ${openclawLib.mkLocalPluginInstallPath stateDir pluginId}/
-          '') enabledLocalPlugins)}
-        '';
+        if [ -f ${managedLocalPluginsManifest} ]; then
+          while IFS= read -r plugin_id; do
+            [ -n "$plugin_id" ] || continue
+            rm -rf ${localPluginsDir}/"$plugin_id"
+          done < ${managedLocalPluginsManifest}
+        fi
+        cat > ${managedLocalPluginsManifest}.tmp << 'LOCAL_PLUGINS_EOF'
+        ${lib.concatStringsSep "\n" (builtins.attrNames enabledLocalPlugins)}
+        LOCAL_PLUGINS_EOF
+        mv ${managedLocalPluginsManifest}.tmp ${managedLocalPluginsManifest}
+        ${lib.concatStringsSep "\n" (lib.mapAttrsToList (pluginId: pluginCfg: ''
+          mkdir -p ${openclawLib.mkLocalPluginInstallPath stateDir pluginId}
+          cp -r ${pluginCfg.package}/. ${openclawLib.mkLocalPluginInstallPath stateDir pluginId}/
+        '') enabledLocalPlugins)}
+      '';
 
         setupConfig = lib.optionalString hasConfig ''
           mkdir -p $(dirname ${configPath})
