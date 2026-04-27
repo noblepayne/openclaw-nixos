@@ -108,6 +108,27 @@ in {
 
 The module copies enabled local packaged plugins into a managed `${stateDir}/extensions/<pluginId>` tree and renders matching `plugins.installs` entries automatically.
 
+If a local plugin declares runtime `dependencies`, vendor them at build time so OpenClaw never needs to run `npm install` at startup:
+
+```nix
+let
+  memoryCognee =
+    openclaw-nixos.lib.mkPluginPackage {
+      inherit pkgs;
+      pluginId = "memory-cognee";
+      version = "2026.2.4";
+      src = ./openclaw-plugins/memory-cognee;
+      runtimeDeps.npm = {
+        npmDepsHash = "sha256-...";
+      };
+    };
+in {
+  services.openclaw.localPlugins.memory-cognee.package = memoryCognee;
+}
+```
+
+For more control, build the vendored runtime-deps tree separately with `openclaw-nixos.lib.mkPluginRuntimeDepsFromNpmLock` and pass it to `mkPluginPackage` as `runtimeDepsPackage`.
+
 To pre-stage bundled plugin runtime deps for a selected plugin set, override the package. The default remains conservative: no bundled plugin runtime deps are staged unless you opt a plugin in.
 
 ```nix
@@ -131,6 +152,12 @@ Set `preserveUpstream = true;` if you need to preserve upstream's staged-plugin 
 - [Lockfile Pruner](docs/lockfile-pruner.md) — How we strip non-linux binaries.
 
 ## Maintenance
+
+Run the packaged test suite with:
+
+```bash
+nix flake check
+```
 
 To update the upstream OpenClaw pin and refresh the pruned lockfile:
 

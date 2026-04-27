@@ -19,15 +19,47 @@
     pkgs = nixpkgs.legacyPackages.${system};
     baseOpenclawLib = import ./nix/lib/default.nix {lib = nixpkgs.lib;};
     openclawLib =
-      baseOpenclawLib
-      // {
-        mkPluginPackage =
+      let
+        self =
+          baseOpenclawLib
+          // {
+        mkPluginRuntimeDepsFromNpmLock =
           {
             pkgs,
             ...
           }@args:
-          pkgs.callPackage ./nix/packages/openclaw-plugin.nix (builtins.removeAttrs args [ "pkgs" ]);
+          pkgs.callPackage ./nix/packages/openclaw-plugin-runtime-deps.nix (builtins.removeAttrs args [ "pkgs" ]);
+        mkPluginPackage =
+          {
+            pkgs,
+            runtimeDeps ? null,
+            ...
+          }@args:
+          let
+            resolvedRuntimeDepsPackage =
+              if args ? runtimeDepsPackage then
+                args.runtimeDepsPackage
+              else if runtimeDeps != null && runtimeDeps ? npm then
+                self.mkPluginRuntimeDepsFromNpmLock (
+                  {
+                    inherit pkgs;
+                    inherit (args) src pluginId;
+                    version = args.version or "0.0.0";
+                  }
+                  // runtimeDeps.npm
+                )
+              else
+                null;
+          in
+          pkgs.callPackage ./nix/packages/openclaw-plugin.nix (
+            (builtins.removeAttrs args [ "pkgs" "runtimeDeps" ])
+            // {
+              runtimeDepsPackage = resolvedRuntimeDepsPackage;
+            }
+          );
       };
+      in
+      self;
 
     # The pruned lockfile lives in our repo
     prunedLockfile = ./pnpm-lock-pruned.yaml;
@@ -55,18 +87,32 @@
       _module.args.openclawUserDefaultPackage = self.packages.${pkgs.system}.openclaw-gateway;
       imports = [ path ];
     };
+    systemServiceModule = mkSystemModule ./nix/modules/openclaw.nix;
+    userServiceModule = mkUserModule ./nix/modules/openclaw-user.nix;
+    checks = import ./nix/checks/default.nix {
+      inherit
+        nixpkgs
+        system
+        openclawLib
+        openclaw-gateway
+        systemServiceModule
+        userServiceModule
+        ;
+    };
   in {
     packages.${system} = {
       inherit openclaw-gateway;
       default = openclaw-gateway;
     };
 
+    checks.${system} = checks;
+
     lib = openclawLib;
 
     nixosModules = {
-      default = mkSystemModule ./nix/modules/openclaw.nix;
-      systemService = mkSystemModule ./nix/modules/openclaw.nix;
-      userService = mkUserModule ./nix/modules/openclaw-user.nix;
+      default = systemServiceModule;
+      systemService = systemServiceModule;
+      userService = userServiceModule;
     };
 
     overlays.default = final: _prev: let

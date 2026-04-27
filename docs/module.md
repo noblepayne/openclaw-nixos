@@ -148,6 +148,8 @@ Declarative local packaged plugins keyed by plugin ID.
 
 Enabled local plugins are copied into a module-managed `${stateDir}/extensions/<pluginId>` tree and matched with generated `plugins.installs.<pluginId>` config.
 
+If a local plugin declares runtime `dependencies`, the package must already vendor them. The module asserts this via `package.passthru.openclaw.requiresRuntimeDeps` and `hasVendoredRuntimeDeps`.
+
 ```nix
 let
   memoryCognee =
@@ -164,6 +166,39 @@ in {
   };
 
   services.openclaw.plugins.slots.memory = "memory-cognee";
+}
+```
+
+To vendor runtime deps directly in the packaged plugin:
+
+```nix
+openclaw-nixos.lib.mkPluginPackage {
+  inherit pkgs;
+  pluginId = "memory-cognee";
+  src = ./openclaw-plugins/memory-cognee;
+  runtimeDeps.npm = {
+    npmDepsHash = "sha256-...";
+  };
+}
+```
+
+To split dependency vendoring from plugin assembly:
+
+```nix
+let
+  runtimeDeps =
+    openclaw-nixos.lib.mkPluginRuntimeDepsFromNpmLock {
+      inherit pkgs;
+      pluginId = "memory-cognee";
+      src = ./openclaw-plugins/memory-cognee;
+      npmDepsHash = "sha256-...";
+    };
+in
+openclaw-nixos.lib.mkPluginPackage {
+  inherit pkgs;
+  pluginId = "memory-cognee";
+  src = ./openclaw-plugins/memory-cognee;
+  runtimeDepsPackage = runtimeDeps;
 }
 ```
 

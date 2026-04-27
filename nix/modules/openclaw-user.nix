@@ -285,7 +285,27 @@ in
         assertion = hasDeclaredUser;
         message = "services.openclawUser.user must reference a user declared in users.users so the module can resolve home and linger settings.";
       }
-    ];
+    ] ++ lib.mapAttrsToList (
+      pluginId: pluginCfg:
+      let
+        pluginMeta = pluginCfg.package.passthru.openclaw or { };
+      in
+      {
+        assertion = (pluginMeta.pluginId or null) == pluginId;
+        message = "services.openclawUser.localPlugins.${pluginId}.package must expose passthru.openclaw.pluginId = \"${pluginId}\".";
+      }
+    ) enabledLocalPlugins ++ lib.mapAttrsToList (
+      pluginId: pluginCfg:
+      let
+        pluginMeta = pluginCfg.package.passthru.openclaw or { };
+      in
+      {
+        assertion =
+          !(pluginMeta.requiresRuntimeDeps or false)
+          || (pluginMeta.hasVendoredRuntimeDeps or false);
+        message = "services.openclawUser.localPlugins.${pluginId}.package declares runtime deps but does not vendor them. Build it with openclaw-nixos.lib.mkPluginRuntimeDepsFromNpmLock or mkPluginPackage runtimeDeps.npm.";
+      }
+    ) enabledLocalPlugins;
 
     users.users.${cfg.user}.linger = lib.mkDefault cfg.enableLinger;
 

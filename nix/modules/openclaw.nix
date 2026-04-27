@@ -249,7 +249,27 @@ in {
             || lib.hasPrefix "/run/user/" stateDir);
         message = "services.openclaw.stateDir must stay outside /home, /root, and /run/user while systemService keeps ProtectHome=true. Use nixosModules.userService for home-scoped state.";
       }
-    ];
+    ] ++ lib.mapAttrsToList (
+      pluginId: pluginCfg:
+      let
+        pluginMeta = pluginCfg.package.passthru.openclaw or { };
+      in
+      {
+        assertion = (pluginMeta.pluginId or null) == pluginId;
+        message = "services.openclaw.localPlugins.${pluginId}.package must expose passthru.openclaw.pluginId = \"${pluginId}\".";
+      }
+    ) enabledLocalPlugins ++ lib.mapAttrsToList (
+      pluginId: pluginCfg:
+      let
+        pluginMeta = pluginCfg.package.passthru.openclaw or { };
+      in
+      {
+        assertion =
+          !(pluginMeta.requiresRuntimeDeps or false)
+          || (pluginMeta.hasVendoredRuntimeDeps or false);
+        message = "services.openclaw.localPlugins.${pluginId}.package declares runtime deps but does not vendor them. Build it with openclaw-nixos.lib.mkPluginRuntimeDepsFromNpmLock or mkPluginPackage runtimeDeps.npm.";
+      }
+    ) enabledLocalPlugins;
 
     users.users."${cfg.user}" = {
       isSystemUser = true;
