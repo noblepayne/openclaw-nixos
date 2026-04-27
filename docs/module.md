@@ -134,6 +134,39 @@ services.openclaw.bundledPlugins.telegram = {
 
 When `stageRuntimeDeps = true`, the module automatically wraps the configured package so that bundled plugin's runtime deps are staged during the build.
 
+### `services.openclaw.localPlugins`
+Type: `attrsOf submodule`, Default: `{}`
+
+Declarative local packaged plugins keyed by plugin ID.
+
+- `package`: packaged local plugin tree, typically built via `openclaw-nixos.lib.mkPluginPackage`
+- `allow`: add the plugin ID to `plugins.allow` automatically
+- `config`: merged into `plugins.entries.<id>.config`
+- `entry`: extra fields merged into `plugins.entries.<id>`
+- `install`: extra fields merged into `plugins.installs.<id>`
+- `version`: rendered into `plugins.installs.<id>.version` when set, otherwise derived from the package version when available
+
+Enabled local plugins are copied into a module-managed `${stateDir}/extensions/<pluginId>` tree and matched with generated `plugins.installs.<pluginId>` config.
+
+```nix
+let
+  memoryCognee =
+    openclaw-nixos.lib.mkPluginPackage {
+      inherit pkgs;
+      pluginId = "memory-cognee";
+      version = "2026.2.4";
+      src = ./openclaw-plugins/memory-cognee;
+    };
+in {
+  services.openclaw.localPlugins.memory-cognee = {
+    package = memoryCognee;
+    config.baseUrl = "http://127.0.0.1:8001";
+  };
+
+  services.openclaw.plugins.slots.memory = "memory-cognee";
+}
+```
+
 ### `services.openclaw.configFile`
 Type: `path`, Default: `null`
 
@@ -205,7 +238,7 @@ Type: `bool`, Default: `true`
 
 Only used by `userService`. When enabled, the module sets `users.users.<name>.linger = true` so the user manager can keep the gateway alive without an active login session.
 
-`userService` exposes the same `plugins` and `bundledPlugins` options under `services.openclawUser`.
+`userService` exposes the same `plugins`, `bundledPlugins`, and `localPlugins` options under `services.openclawUser`.
 
 ## Services Created
 

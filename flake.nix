@@ -17,7 +17,17 @@
   }: let
     system = "x86_64-linux";
     pkgs = nixpkgs.legacyPackages.${system};
-    openclawLib = import ./nix/lib/default.nix {lib = nixpkgs.lib;};
+    baseOpenclawLib = import ./nix/lib/default.nix {lib = nixpkgs.lib;};
+    openclawLib =
+      baseOpenclawLib
+      // {
+        mkPluginPackage =
+          {
+            pkgs,
+            ...
+          }@args:
+          pkgs.callPackage ./nix/packages/openclaw-plugin.nix (builtins.removeAttrs args [ "pkgs" ]);
+      };
 
     # The pruned lockfile lives in our repo
     prunedLockfile = ./pnpm-lock-pruned.yaml;

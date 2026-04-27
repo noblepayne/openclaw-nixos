@@ -53,9 +53,44 @@ let
           config = pluginCfg.config;
         }));
 
+  renderLocalPluginEntry =
+    pluginId: pluginCfg:
+    lib.recursiveUpdate
+      {
+        enabled = true;
+      }
+      (lib.recursiveUpdate
+        (pluginCfg.entry or { })
+        (lib.optionalAttrs (pluginCfg.config or { } != { }) {
+          config = pluginCfg.config;
+        }));
+
+  mkLocalPluginsDir = stateDir: "${stateDir}/extensions";
+  mkLocalPluginInstallPath = stateDir: pluginId: "${mkLocalPluginsDir stateDir}/${pluginId}";
+
+  renderLocalPluginInstall =
+    stateDir: pluginId: pluginCfg:
+    let
+      renderedVersion =
+        if (pluginCfg.version or null) != null
+        then pluginCfg.version
+        else pluginCfg.package.version or null;
+    in
+    (lib.optionalAttrs true {
+      source = "path";
+      sourcePath = toString pluginCfg.package;
+      installPath = mkLocalPluginInstallPath stateDir pluginId;
+    })
+    // (lib.optionalAttrs (renderedVersion != null) {
+      version = renderedVersion;
+    })
+    // (pluginCfg.install or { });
+
   renderPluginsConfig =
     {
       bundledPlugins ? { },
+      localPlugins ? { },
+      stateDir,
       plugins ? {
         allow = [ ];
         slots = { };
@@ -64,13 +99,24 @@ let
       },
     }:
     let
-      enabledBundledPlugins = lib.filterAttrs (_: pluginCfg: pluginCfg.enable) bundledPlugins;
+      enabledBundledPlugins = lib.filterAttrs (_: pluginCfg: pluginCfg.enable or false) bundledPlugins;
+      enabledLocalPlugins = lib.filterAttrs (_: pluginCfg: pluginCfg.enable or true) localPlugins;
       renderedBundledEntries = lib.mapAttrs renderBundledPluginEntry enabledBundledPlugins;
+      renderedLocalEntries = lib.mapAttrs renderLocalPluginEntry enabledLocalPlugins;
+      renderedLocalInstalls =
+        lib.mapAttrs (renderLocalPluginInstall stateDir) enabledLocalPlugins;
       allow =
-        lib.unique ((plugins.allow or [ ]) ++ (builtins.attrNames enabledBundledPlugins));
+        lib.unique (
+          (plugins.allow or [ ])
+          ++ (builtins.attrNames enabledBundledPlugins)
+          ++ (builtins.attrNames (lib.filterAttrs (_: pluginCfg: pluginCfg.allow or true) enabledLocalPlugins))
+        );
       slots = plugins.slots or { };
-      entries = lib.recursiveUpdate renderedBundledEntries (plugins.entries or { });
-      installs = plugins.installs or { };
+      entries =
+        lib.recursiveUpdate
+          (lib.recursiveUpdate renderedBundledEntries renderedLocalEntries)
+          (plugins.entries or { });
+      installs = lib.recursiveUpdate renderedLocalInstalls (plugins.installs or { });
       renderedPlugins =
         (lib.optionalAttrs (allow != [ ]) { inherit allow; })
         // (lib.optionalAttrs (slots != { }) { inherit slots; })
@@ -85,7 +131,7 @@ let
     bundledPlugins:
     lib.sort builtins.lessThan (
       builtins.attrNames (
-        lib.filterAttrs (_: pluginCfg: pluginCfg.enable && pluginCfg.stageRuntimeDeps) bundledPlugins
+        lib.filterAttrs (_: pluginCfg: (pluginCfg.enable or false) && (pluginCfg.stageRuntimeDeps or false)) bundledPlugins
       )
     );
 
@@ -136,5 +182,7 @@ in
     mkCronJobsPath
     mkDistDir
     mkExtensionsDir
+    mkLocalPluginsDir
+    mkLocalPluginInstallPath
     ;
 }

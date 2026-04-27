@@ -83,6 +83,31 @@ Bundled plugins declared this way are merged into the generated `plugins.allow` 
 
 If you set `bundledPlugins.<id>.stageRuntimeDeps = true`, the module also wraps the service package automatically so that bundled plugin's runtime deps are staged at build time.
 
+For packaged local plugins, build a plugin derivation once and attach it declaratively:
+
+```nix
+let
+  memoryCognee =
+    openclaw-nixos.lib.mkPluginPackage {
+      inherit pkgs;
+      pluginId = "memory-cognee";
+      version = "2026.2.4";
+      src = ./openclaw-plugins/memory-cognee;
+    };
+in {
+  services.openclaw = {
+    localPlugins.memory-cognee = {
+      package = memoryCognee;
+      config.baseUrl = "http://127.0.0.1:8001";
+    };
+
+    plugins.slots.memory = "memory-cognee";
+  };
+}
+```
+
+The module copies enabled local packaged plugins into a managed `${stateDir}/extensions/<pluginId>` tree and renders matching `plugins.installs` entries automatically.
+
 To pre-stage bundled plugin runtime deps for a selected plugin set, override the package. The default remains conservative: no bundled plugin runtime deps are staged unless you opt a plugin in.
 
 ```nix

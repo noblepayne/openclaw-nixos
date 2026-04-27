@@ -20,18 +20,23 @@
   };
   stateDir = cfg.stateDir;
   extensionsDir = openclawLib.mkExtensionsDir stateDir;
+  localPluginsDir = openclawLib.mkLocalPluginsDir stateDir;
   distDir = openclawLib.mkDistDir stateDir;
   packageDist = "${resolvedPackage}/lib/openclaw/dist";
   packageNodeModules = "${resolvedPackage}/lib/openclaw/node_modules";
   configPath = openclawLib.mkConfigPath stateDir;
   cronDir = openclawLib.mkCronDir stateDir;
   cronJobsPath = openclawLib.mkCronJobsPath stateDir;
+  managedLocalPluginsManifest = "${localPluginsDir}/.openclaw-nix-managed-plugins";
   pluginConfig = openclawLib.renderPluginsConfig {
     inherit (cfg)
       bundledPlugins
+      localPlugins
       plugins
       ;
+    inherit stateDir;
   };
+  enabledLocalPlugins = lib.filterAttrs (_: pluginCfg: pluginCfg.enable) cfg.localPlugins;
 
   mergedConfig = openclawLib.mergeConfig {
     inherit (cfg) configFile;
@@ -126,6 +131,49 @@ in {
       }));
       default = {};
       description = "Declarative bundled plugin definitions keyed by upstream plugin ID.";
+    };
+
+    localPlugins = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.submodule ({name, ...}: {
+        options = {
+          enable = lib.mkOption {
+            type = lib.types.bool;
+            default = true;
+            description = "Whether to install and configure the local packaged plugin ${name}.";
+          };
+          allow = lib.mkOption {
+            type = lib.types.bool;
+            default = true;
+            description = "Add this local plugin ID to plugins.allow automatically.";
+          };
+          package = lib.mkOption {
+            type = lib.types.package;
+            description = "Packaged local OpenClaw plugin tree to install for ${name}.";
+          };
+          version = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            description = "Version to render into plugins.installs.<pluginId>.version. Defaults to the package version when available.";
+          };
+          config = lib.mkOption {
+            type = lib.types.attrsOf lib.types.anything;
+            default = {};
+            description = "Merged into plugins.entries.<pluginId>.config when the local plugin is enabled.";
+          };
+          entry = lib.mkOption {
+            type = lib.types.attrsOf lib.types.anything;
+            default = {};
+            description = "Extra fields merged into plugins.entries.<pluginId> when the local plugin is enabled.";
+          };
+          install = lib.mkOption {
+            type = lib.types.attrsOf lib.types.anything;
+            default = {};
+            description = "Extra fields merged into plugins.installs.<pluginId>.";
+          };
+        };
+      }));
+      default = {};
+      description = "Declarative local packaged plugins keyed by plugin ID.";
     };
 
     configFile = lib.mkOption {
@@ -236,6 +284,24 @@ in {
           ln -sfn ${packageNodeModules} ${distDir}/node_modules
         '';
 
+        setupLocalPlugins = ''
+          mkdir -p ${localPluginsDir}
+          if [ -f ${managedLocalPluginsManifest} ]; then
+            while IFS= read -r plugin_id; do
+              [ -n "$plugin_id" ] || continue
+              rm -rf ${localPluginsDir}/"$plugin_id"
+            done < ${managedLocalPluginsManifest}
+          fi
+          cat > ${managedLocalPluginsManifest}.tmp << 'LOCAL_PLUGINS_EOF'
+          ${lib.concatStringsSep "\n" (builtins.attrNames enabledLocalPlugins)}
+          LOCAL_PLUGINS_EOF
+          mv ${managedLocalPluginsManifest}.tmp ${managedLocalPluginsManifest}
+          ${lib.concatStringsSep "\n" (lib.mapAttrsToList (pluginId: pluginCfg: ''
+            mkdir -p ${openclawLib.mkLocalPluginInstallPath stateDir pluginId}
+            cp -r ${pluginCfg.package}/. ${openclawLib.mkLocalPluginInstallPath stateDir pluginId}/
+          '') enabledLocalPlugins)}
+        '';
+
         setupConfig = lib.optionalString hasConfig ''
           mkdir -p $(dirname ${configPath})
           cat > ${configPath}.tmp << 'CONFIG_EOF'
@@ -256,6 +322,7 @@ in {
           setupConfig
           setupCron
           setupExtensions
+          setupLocalPlugins
           "chown -R ${cfg.user}:${cfg.group} ${stateDir}"
         ];
       in
