@@ -26,6 +26,7 @@
   distDir = openclawLib.mkDistDir stateDir;
   packageDist = "${resolvedPackage}/lib/openclaw/dist";
   packageNodeModules = "${resolvedPackage}/lib/openclaw/node_modules";
+  packageJson = "${resolvedPackage}/lib/openclaw/package.json";
   bundledRuntimeDepsPackage =
     if bundledRuntimeDepsPluginIds == []
     then null
@@ -311,13 +312,36 @@ in {
         rm -rf ${distDir}
         mkdir -p ${distDir}
         cp -r ${packageDist}/* ${distDir}/
+        cp ${packageJson} ${stateDir}/package.json
+        ln -sfn ${packageNodeModules} ${stateDir}/node_modules
         ln -sfn ${packageNodeModules} ${distDir}/node_modules
       '';
 
       setupBundledRuntimeDeps = lib.optionalString (bundledRuntimeDepsPackage != null) ''
         rm -rf ${bundledRuntimeDepsDir}
         mkdir -p ${bundledRuntimeDepsDir}
-        cp -r ${bundledRuntimeDepsPackage}/. ${bundledRuntimeDepsDir}/
+        runtime_package_root="${
+          if cfg.mutableExtensionsDir
+          then stateDir
+          else "${resolvedPackage}/lib/openclaw"
+        }"
+        runtime_package_version="$(
+          jq -r '.version // "unknown"' ${packageJson} \
+            | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+|-+$//g; s/^$/unknown/'
+        )"
+        runtime_package_hash="$(printf '%s' "$runtime_package_root" | sha256sum | cut -c1-12)"
+        runtime_package_key="openclaw-$runtime_package_version-$runtime_package_hash"
+        source_package_key="$(cat ${bundledRuntimeDepsPackage}/.openclaw-package-key)"
+        if [ -d ${bundledRuntimeDepsPackage}/"$source_package_key"/node_modules ]; then
+          mkdir -p ${bundledRuntimeDepsDir}/"$runtime_package_key"
+          cp -r ${bundledRuntimeDepsPackage}/"$source_package_key"/node_modules \
+            ${bundledRuntimeDepsDir}/"$runtime_package_key"/node_modules
+        else
+          mkdir -p ${bundledRuntimeDepsDir}/"$runtime_package_key"
+        fi
+        cp ${bundledRuntimeDepsPackage}/.openclaw-selected-plugin-ids.json \
+          ${bundledRuntimeDepsDir}/.openclaw-selected-plugin-ids.json
+        printf '%s\n' "$runtime_package_key" > ${bundledRuntimeDepsDir}/.openclaw-package-key
       '';
 
       setupLocalPlugins = ''
