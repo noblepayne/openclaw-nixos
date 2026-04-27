@@ -2,10 +2,11 @@
 
 ## Overview
 
-`openclaw-nixos` is a minimal Nix flake that packages the [OpenClaw](https://github.com/openclaw/openclaw) gateway for NixOS servers. It is a fork of [nix-openclaw](https://github.com/nix-openclaw/nix-openclaw), stripped from ~18,700 lines to ~700.
+`openclaw-nixos` is a composable Nix platform for the [OpenClaw](https://github.com/openclaw/openclaw) gateway. It packages upstream OpenClaw, exposes reusable Nix helpers, and ships both system-service and user-service adapters for downstream hosts.
 
 **What it provides:**
 - `packages.x86_64-linux.openclaw-gateway` — the built gateway binary
+- `packages.x86_64-linux.openclaw-bundled-runtime-deps` — a package-scoped bundled runtime-deps artifact
 - `lib` — shared config/state rendering helpers
 - `nixosModules.systemService` — a system-level NixOS module (`services.openclaw`)
 - `nixosModules.userService` — a user-service NixOS module (`services.openclawUser`)
@@ -52,7 +53,12 @@
 └───────────┬─────────────┘
             │
 ┌───────────▼─────────────┐
-│  selective runtime deps │  ← opt-in bundled plugin prep
+│  selective bundled      │  ← filtered bundled-plugin artifact
+│  plugin artifact        │
+└───────────┬─────────────┘
+            │
+┌───────────▼─────────────┐
+│  selective runtime deps │  ← package-scoped dep closure for chosen plugins
 │  + stage artifact       │
 └───────────┬─────────────┘
             │
@@ -62,28 +68,44 @@
 └─────────────────────────┘
 ```
 
-Bundled plugin runtime dependency preparation is now split across two artifacts:
+Bundled plugin preparation is now split across two artifacts:
 
-- `openclaw-gateway` can opt specific bundled plugin IDs into build-time staging
-- `openclaw-bundled-runtime-deps` materializes the package-scoped runtime-deps tree consumed through `OPENCLAW_PLUGIN_STAGE_DIR`
+- `openclaw-bundled-plugins` filters the bundled plugin tree to only the enabled plugin IDs
+- `openclaw-bundled-runtime-deps` materializes the package-scoped runtime-deps closure consumed through `OPENCLAW_PLUGIN_STAGE_DIR`
 
-The modules copy that runtime-deps artifact into writable state before startup, so packaged deployments avoid runtime `npm install` while still matching upstream's external stage-root contract.
+The modules then assemble the live runtime root from those artifacts before startup. That keeps packaged deployments off the runtime `npm install` path while still matching upstream's external stage-root contract.
 
 ## Runtime services
 
-The NixOS module creates two services:
+The service adapters share the same package and rendering layer, but differ in ownership and activation style.
+
+### `systemService`
+
+The system adapter creates:
 
 1. **`openclaw-setup.service`** (oneshot, runs as root)
-   - Copies bundled extensions from the Nix store to `/var/lib/openclaw/dist/`
-   - Symlinks `node_modules` from the store into the mutable `dist/`
-   - Copies prebuilt bundled runtime deps into `/var/lib/openclaw/plugin-runtime-deps/`
+   - Creates the state root under `/var/lib/openclaw`
    - Writes merged config to `/var/lib/openclaw/openclaw.json`
    - Writes cron jobs to `/var/lib/openclaw/cron/jobs.json`
+   - If `mutableExtensionsDir = true`, copies the packaged `dist/` tree into writable state and replaces `dist/extensions` with the selected bundled plugin set
+   - If bundled runtime deps are configured, assembles `/var/lib/openclaw/plugin-runtime-deps/<package-key>/` from the selected bundled plugin tree plus the prebuilt dependency closure
    - Chowns the state directory to the service user
 
 2. **`openclaw.service`** (the gateway process)
-   - Runs as the `openclaw` user (with `bash` shell for exec/repl support)
-   - Hardened: `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome=true`
+   - Runs as the `openclaw` user
+   - Uses either the mutable bundled-plugin tree in state or the filtered read-only bundled-plugin artifact directly
+   - Reads the assembled bundled runtime stage via `OPENCLAW_PLUGIN_STAGE_DIR`
+   - Uses hardening such as `NoNewPrivileges`, `ProtectSystem=strict`, and `ProtectHome=true`
+
+### `userService`
+
+The user adapter:
+
+- renders the same config and plugin model under `services.openclawUser`
+- runs setup through a NixOS activation script instead of a root-owned oneshot service
+- runs the gateway as a `systemd.user` unit
+- defaults state under the target user's home directory
+- supports the same filtered bundled-plugin and staged runtime-deps behavior as `systemService`
 
 ## Lockfile pruning
 
@@ -95,4 +117,4 @@ The pruner (`_tools/lockfile-pruner/prune.mjs`) uses `@pnpm/lockfile-file` to pa
 
 - **nix-openclaw**: The original Nix packaging (Unlicense). We copied and adapted their build scripts.
 - **openclaw**: The upstream application. We pull source from their GitHub repo.
-- **lattice**: Production instance that consumes and validates this module. Its config served as the template for the module's design.
+- **nomad**: A downstream user-service consumer that validates the shared package, plugin, and stage-root model against a real production-like host.

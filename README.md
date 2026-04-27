@@ -9,6 +9,7 @@ This flake provides a simplified, server-oriented build that strips away 18,000+
 - **Lean Build**: Focuses on the gateway and core runtime. No home-manager, no macOS cruft, no auto-generated 15k-line schema.
 - **Smart Dependency Pruning**: Uses a custom lockfile pruner to strip ~200 platform-specific binaries (Windows, Android, etc.) reducing build overhead and store bloat.
 - **Composable Surface**: Exposes a package, shared rendering library, and both system-service and user-service NixOS modules.
+- **Allow-Only Bundled Plugins**: Builds a filtered bundled-plugin artifact so downstreams can expose only the bundled plugins they explicitly enable.
 - **Build-Time Runtime Deps**: Can selectively stage bundled plugin runtime dependencies during the package build, so chosen packaged plugins avoid npm installs at service startup.
 - **NixOS Native**: Simple, robust system-service module with hardening and state management based on real-world deployments.
 - **Deterministic**: Standardized build flow with verified pnpm dependency integrity.
@@ -80,6 +81,8 @@ For declarative plugin config at the module layer, enable bundled plugins and me
 ```
 
 Bundled plugins declared this way are merged into the generated `plugins.allow` and `plugins.entries` config automatically.
+
+When bundled plugins are enabled declaratively, the module also filters the bundled plugin tree itself. Downstreams do not have to rely on a denylist to keep unwanted bundled plugins out of the runtime.
 
 If you set `bundledPlugins.<id>.stageRuntimeDeps = true`, the module now does two things automatically:
 

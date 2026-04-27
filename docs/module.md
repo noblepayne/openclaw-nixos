@@ -45,17 +45,42 @@ The two service adapters intentionally use different option roots.
   - defaults `stateDir` under the user's home directory
   - expects the host to manage the target user account via `users.users`
 
-Both adapters consume an OpenClaw package. If you need build-time staged bundled plugin runtime deps, override the package itself rather than expecting a separate module option:
+Both adapters consume an OpenClaw package, but the preferred interface for bundled plugins is the declarative module surface:
 
 ```nix
-services.openclaw.package =
-  openclaw-nixos.lib.withBundledRuntimeDeps {
-    package = openclaw-nixos.packages.${pkgs.system}.openclaw-gateway;
-    pluginIds = [ "telegram" ];
-  };
+services.openclaw.bundledPlugins.telegram = {
+  enable = true;
+  stageRuntimeDeps = true;
+  config.botToken = "BOT_TOKEN";
+};
 ```
 
-Set `preserveUpstream = true;` to preserve upstream's staged bundled-plugin set, or pass an explicit list to keep the package hermetic for only the plugins you want.
+When you enable bundled plugins this way, the module does three things:
+
+- merges the plugin ID into `plugins.allow`
+- renders `plugins.entries.<id>` from `config` and `entry`
+- builds a filtered bundled-plugin artifact containing only the enabled bundled plugin IDs
+
+If `stageRuntimeDeps = true`, the module also prepares a build-time bundled runtime-deps closure for that plugin and assembles a live stage root under `${stateDir}/plugin-runtime-deps` before startup.
+
+Low-level helpers still exist for downstream composition:
+
+```nix
+openclaw-nixos.lib.withBundledRuntimeDeps {
+  package = openclaw-nixos.packages.${pkgs.system}.openclaw-gateway;
+  pluginIds = [ "telegram" ];
+}
+```
+
+and:
+
+```nix
+openclaw-nixos.lib.mkBundledPluginsPackage {
+  inherit pkgs;
+  package = openclaw-nixos.packages.${pkgs.system}.openclaw-gateway;
+  pluginIds = [ "telegram" ];
+}
+```
 
 ### `services.openclaw.enable`
 Type: `bool`, Default: `false`
@@ -132,7 +157,7 @@ services.openclaw.bundledPlugins.telegram = {
 };
 ```
 
-When `stageRuntimeDeps = true`, the module automatically wraps the configured package so that bundled plugin runtime deps are prepared during the build, copied into `${stateDir}/plugin-runtime-deps` during setup, and exposed to the service through `OPENCLAW_PLUGIN_STAGE_DIR`.
+When `stageRuntimeDeps = true`, the module automatically wraps the configured package so that bundled plugin runtime deps are prepared during the build, copied into a live stage root during setup, and exposed to the service through `OPENCLAW_PLUGIN_STAGE_DIR`.
 
 ### `services.openclaw.localPlugins`
 Type: `attrsOf submodule`, Default: `{}`
@@ -228,11 +253,11 @@ services.openclaw.cronJobs = {
 ### `services.openclaw.mutableExtensionsDir`
 Type: `bool`, Default: `true`
 
-When enabled, copies bundled extensions from the read-only Nix store to `/var/lib/openclaw/dist/` and sets `OPENCLAW_BUNDLED_PLUGINS_DIR` to point there.
+When enabled, the adapter copies the packaged `dist/` tree into writable state and replaces `dist/extensions` with the filtered bundled plugin set there.
 
-This is **required** for upstream OpenClaw versions that enforce plugin path boundary validation, which rejects Nix store paths. Handled by the `openclaw-setup` oneshot service that runs before each gateway start.
+When disabled, the service points `OPENCLAW_BUNDLED_PLUGINS_DIR` directly at the filtered bundled-plugin artifact in the Nix store.
 
-Disable only after the upstream fix (PR #42900) is merged and released.
+This is primarily a compatibility switch for hosts that need a writable bundled-plugin tree. The filtered bundled-plugin model works in both modes.
 
 ### `services.openclaw.openFirewall`
 Type: `bool`, Default: `false`
