@@ -318,6 +318,7 @@ in {
       '';
 
       setupBundledRuntimeDeps = lib.optionalString (bundledRuntimeDepsPackage != null) ''
+        chmod -R u+w ${bundledRuntimeDepsDir} 2>/dev/null || true
         rm -rf ${bundledRuntimeDepsDir}
         mkdir -p ${bundledRuntimeDepsDir}
         runtime_package_root="${
@@ -326,10 +327,14 @@ in {
           else "${resolvedPackage}/lib/openclaw"
         }"
         runtime_package_version="$(
-          jq -r '.version // "unknown"' ${packageJson} \
-            | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+|-+$//g; s/^$/unknown/'
+          ${pkgs.jq}/bin/jq -r '.version // "unknown"' ${packageJson} \
+            | ${pkgs.gnused}/bin/sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+|-+$//g; s/^$/unknown/'
         )"
-        runtime_package_hash="$(printf '%s' "$runtime_package_root" | sha256sum | cut -c1-12)"
+        runtime_package_hash="$(
+          printf '%s' "$runtime_package_root" \
+            | ${pkgs.coreutils}/bin/sha256sum \
+            | ${pkgs.coreutils}/bin/cut -c1-12
+        )"
         runtime_package_key="openclaw-$runtime_package_version-$runtime_package_hash"
         source_package_key="$(cat ${bundledRuntimeDepsPackage}/.openclaw-package-key)"
         if [ -d ${bundledRuntimeDepsPackage}/"$source_package_key"/node_modules ]; then
