@@ -12,8 +12,18 @@ set -euo pipefail
 #   # Copy the 'got:' hash into flake.nix pnpmDepsHash
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PRUNER_DIR="$REPO_ROOT/_tools/lockfile-pruner"
 
 cd "$REPO_ROOT"
+
+ensure_pruner_deps() {
+  if [ ! -f "$PRUNER_DIR/package-lock.json" ]; then
+    echo "!! Missing $PRUNER_DIR/package-lock.json" >&2
+    exit 1
+  fi
+  echo ">> Installing lockfile-pruner dependencies from package-lock.json..."
+  (cd "$PRUNER_DIR" && npm ci --ignore-scripts --no-audit --no-fund)
+}
 
 echo ">> Updating openclaw flake input..."
 if [ -n "${1:-}" ]; then
@@ -32,6 +42,7 @@ curl -fSL "https://github.com/openclaw/openclaw/archive/${REV}.tar.gz" | tar xz 
 UPSTREAM="${TMPDIR}/openclaw-${REV}"
 
 echo ">> Regenerating pruned lockfile..."
+ensure_pruner_deps
 node _tools/lockfile-pruner/prune.mjs "$UPSTREAM" "$REPO_ROOT"
 mv "$REPO_ROOT/pnpm-lock.yaml" "$REPO_ROOT/pnpm-lock-pruned.yaml"
 

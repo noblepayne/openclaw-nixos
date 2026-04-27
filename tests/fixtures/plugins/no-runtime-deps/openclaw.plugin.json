@@ -1,0 +1,8 @@
+{
+  "id": "fixture-no-runtime-deps",
+  "name": "Fixture No Runtime Deps",
+  "configSchema": {
+    "type": "object",
+    "properties": {}
+  }
+}

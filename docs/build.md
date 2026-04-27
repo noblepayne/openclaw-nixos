@@ -38,8 +38,9 @@ Reads `pnpm-lock-pruned.yaml`, resolves all 1,157 package tarballs, downloads th
 5. `pnpm rebuild` — rebuilds only `onlyBuiltDependencies` from package.json
 6. `patchShebangs node_modules/.bin`
 7. Build steps: `canvas:a2ui:bundle`, `tsdown`, `plugin-sdk:dts`, etc.
-8. `pnpm ui:build` — builds the control UI (included in gateway package)
-9. `pnpm prune --prod` — removes dev dependencies
+8. `postinstall-bundled-plugins` plus selective bundled runtime-deps staging for opted-in plugin IDs
+9. `pnpm ui:build` — builds the control UI (included in gateway package)
+10. `pnpm prune --prod` — removes dev dependencies
 
 ### 4. installPhase (gateway-install.sh)
 
@@ -59,6 +60,8 @@ Reads `pnpm-lock-pruned.yaml`, resolves all 1,157 package tarballs, downloads th
 | `NODE_LLAMA_CPP_SKIP_DOWNLOAD` | Don't download llama.cpp binaries |
 | `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD` | Don't download browsers |
 | `PNPM_DEPS` | Path to fetched pnpm store |
+| `OPENCLAW_NIX_STAGE_RUNTIME_DEPS_STRATEGY` | `explicit` for a selected subset, `preserve` to keep upstream's staged-plugin set |
+| `OPENCLAW_NIX_STAGE_RUNTIME_DEPS_PLUGIN_IDS` | Comma-separated bundled plugin IDs to stage during the package build |
 
 ## Common issues
 
