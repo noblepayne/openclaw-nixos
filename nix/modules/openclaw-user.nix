@@ -14,6 +14,10 @@
       pkgs.openclaw-gateway
     else
       pkgs.openclaw;
+  resolvedPackage = openclawLib.withBundledRuntimeDepsFromPlugins {
+    package = cfg.package;
+    inherit (cfg) bundledPlugins;
+  };
   hasConfiguredUser = cfg.user != null;
   hasDeclaredUser =
     hasConfiguredUser
@@ -46,18 +50,25 @@
       "${resolvedHomeDirectory}/.local/share/openclaw";
   extensionsDir = openclawLib.mkExtensionsDir stateDir;
   distDir = openclawLib.mkDistDir stateDir;
-  packageDist = "${cfg.package}/lib/openclaw/dist";
-  packageNodeModules = "${cfg.package}/lib/openclaw/node_modules";
+  packageDist = "${resolvedPackage}/lib/openclaw/dist";
+  packageNodeModules = "${resolvedPackage}/lib/openclaw/node_modules";
   configPath = openclawLib.mkConfigPath stateDir;
   cronDir = openclawLib.mkCronDir stateDir;
   cronJobsPath = openclawLib.mkCronJobsPath stateDir;
+  pluginConfig = openclawLib.renderPluginsConfig {
+    inherit (cfg)
+      bundledPlugins
+      plugins
+      ;
+  };
 
   mergedConfig = openclawLib.mergeConfig {
     inherit (cfg) configFile;
     inherit (cfg) config;
+    extraConfig = pluginConfig;
   };
 
-  hasConfig = cfg.config != { } || cfg.configFile != null;
+  hasConfig = cfg.config != { } || cfg.configFile != null || pluginConfig != { };
   hasCronJobs = cfg.cronJobs != { };
 in
 {
@@ -109,9 +120,63 @@ in
     };
 
     config = lib.mkOption {
-      type = lib.types.attrsOf (lib.types.attrsOf lib.types.anything);
+      type = lib.types.attrsOf lib.types.anything;
       default = { };
       description = "OpenClaw configuration as a Nix attrset";
+    };
+
+    plugins = lib.mkOption {
+      type = lib.types.submodule {
+        options = {
+          allow = lib.mkOption {
+            type = lib.types.listOf lib.types.str;
+            default = [];
+            description = "Plugin IDs to allow under top-level plugins.allow.";
+          };
+          slots = lib.mkOption {
+            type = lib.types.attrsOf lib.types.str;
+            default = {};
+            description = "Plugin slot assignments merged under top-level plugins.slots.";
+          };
+          entries = lib.mkOption {
+            type = lib.types.attrsOf (lib.types.attrsOf lib.types.anything);
+            default = {};
+            description = "Plugin entry definitions merged under top-level plugins.entries.";
+          };
+          installs = lib.mkOption {
+            type = lib.types.attrsOf (lib.types.attrsOf lib.types.anything);
+            default = {};
+            description = "Plugin install metadata merged under top-level plugins.installs.";
+          };
+        };
+      };
+      default = {};
+      description = "Declarative plugin config merged into the generated OpenClaw config.";
+    };
+
+    bundledPlugins = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.submodule ({name, ...}: {
+        options = {
+          enable = lib.mkEnableOption "bundled OpenClaw plugin ${name}";
+          stageRuntimeDeps = lib.mkOption {
+            type = lib.types.bool;
+            default = false;
+            description = "Stage this bundled plugin's runtime dependencies during the package build.";
+          };
+          config = lib.mkOption {
+            type = lib.types.attrsOf lib.types.anything;
+            default = {};
+            description = "Merged into plugins.entries.<pluginId>.config when the bundled plugin is enabled.";
+          };
+          entry = lib.mkOption {
+            type = lib.types.attrsOf lib.types.anything;
+            default = {};
+            description = "Extra fields merged into plugins.entries.<pluginId> when the bundled plugin is enabled.";
+          };
+        };
+      }));
+      default = {};
+      description = "Declarative bundled plugin definitions keyed by upstream plugin ID.";
     };
 
     configFile = lib.mkOption {
@@ -218,7 +283,7 @@ in
       unitConfig.ConditionUser = cfg.user;
       serviceConfig = {
         Type = "simple";
-        ExecStart = "${cfg.package}/bin/openclaw gateway";
+        ExecStart = "${resolvedPackage}/bin/openclaw gateway";
         WorkingDirectory = stateDir;
         Restart = "always";
         RestartSec = 5;

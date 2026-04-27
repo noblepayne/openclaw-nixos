@@ -80,7 +80,7 @@ Address to bind to. Use `"0.0.0.0"` for all interfaces.
 ### `services.openclaw.config`
 Type: `attrs`, Default: `{}`
 
-OpenClaw configuration as a Nix attrset. Merged with `configFile` if both are set (attrset wins on conflicts). Written to `/var/lib/openclaw/openclaw.json` by the setup service.
+OpenClaw configuration as a Nix attrset. Merged with generated plugin config and `configFile` if both are set (attrset wins on conflicts). Written to `/var/lib/openclaw/openclaw.json` by the setup service.
 
 ```nix
 services.openclaw.config = {
@@ -93,6 +93,46 @@ services.openclaw.config = {
   memory.enabled = true;
 };
 ```
+
+### `services.openclaw.plugins`
+Type: `submodule`, Default: `{}`
+
+Declarative plugin structure merged under top-level `plugins`.
+
+- `allow`: plugin IDs appended to `plugins.allow`
+- `slots`: slot assignments merged into `plugins.slots`
+- `entries`: entry definitions merged into `plugins.entries`
+- `installs`: install metadata merged into `plugins.installs`
+
+```nix
+services.openclaw.plugins = {
+  slots.memory = "memory-cognee";
+  entries.memory-cognee = {
+    enabled = true;
+    config.baseUrl = "http://127.0.0.1:8001";
+  };
+};
+```
+
+### `services.openclaw.bundledPlugins`
+Type: `attrsOf submodule`, Default: `{}`
+
+Declarative bundled plugin definitions keyed by upstream plugin ID.
+
+- `enable`: adds the plugin ID to `plugins.allow`
+- `config`: merged into `plugins.entries.<id>.config`
+- `entry`: extra fields merged into `plugins.entries.<id>`
+- `stageRuntimeDeps`: wraps the package so this bundled plugin's runtime deps are staged at build time
+
+```nix
+services.openclaw.bundledPlugins.telegram = {
+  enable = true;
+  stageRuntimeDeps = true;
+  config.botToken = "BOT_TOKEN";
+};
+```
+
+When `stageRuntimeDeps = true`, the module automatically wraps the configured package so that bundled plugin's runtime deps are staged during the build.
 
 ### `services.openclaw.configFile`
 Type: `path`, Default: `null`
@@ -164,6 +204,8 @@ The `systemd.user` unit name to install for the gateway.
 Type: `bool`, Default: `true`
 
 Only used by `userService`. When enabled, the module sets `users.users.<name>.linger = true` so the user manager can keep the gateway alive without an active login session.
+
+`userService` exposes the same `plugins` and `bundledPlugins` options under `services.openclawUser`.
 
 ## Services Created
 

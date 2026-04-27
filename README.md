@@ -59,6 +59,30 @@ Recommended approaches:
 
 The system adapter uses `services.openclaw`. The user-service adapter uses `services.openclawUser`.
 
+For declarative plugin config at the module layer, enable bundled plugins and merge direct plugin structure separately:
+
+```nix
+{
+  services.openclaw = {
+    bundledPlugins.telegram = {
+      enable = true;
+      stageRuntimeDeps = true;
+      config.botToken = "BOT_TOKEN";
+    };
+
+    plugins.slots.memory = "memory-cognee";
+    plugins.entries.memory-cognee = {
+      enabled = true;
+      config.baseUrl = "http://127.0.0.1:8001";
+    };
+  };
+}
+```
+
+Bundled plugins declared this way are merged into the generated `plugins.allow` and `plugins.entries` config automatically.
+
+If you set `bundledPlugins.<id>.stageRuntimeDeps = true`, the module also wraps the service package automatically so that bundled plugin's runtime deps are staged at build time.
+
 To pre-stage bundled plugin runtime deps for a selected plugin set, override the package. The default remains conservative: no bundled plugin runtime deps are staged unless you opt a plugin in.
 
 ```nix
