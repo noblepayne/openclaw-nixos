@@ -27,6 +27,7 @@ VERSION_CHECK=false
 INPUT_NAME="openclaw"
 LOCKFILE_OUT="$REPO_ROOT/pnpm-lock-pruned.yaml"
 PRUNER_DIR="$REPO_ROOT/_tools/lockfile-pruner"
+STAGE_RUNTIME_DEPS_VALIDATION_PREFERENCE=(telegram discord slack whatsapp matrix)
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -41,6 +42,133 @@ done
 
 log() { echo ">> $1"; }
 warn() { echo "!! $1" >&2; }
+
+build_staged_runtime_deps_variant() {
+  local plugin_id="$1"
+  nix build --impure --expr '
+    let
+      flake = builtins.getFlake (toString '"${REPO_ROOT}"');
+      pkgs = import flake.inputs.nixpkgs {
+        system = "x86_64-linux";
+        overlays = [ flake.overlays.default ];
+      };
+    in
+      pkgs.openclaw-gateway.override {
+        stagedRuntimeDepsPluginIds = [ "'"${plugin_id}"'" ];
+      }
+  ' --no-link --print-out-paths
+}
+
+find_stage_runtime_deps_candidates() {
+  local source_root="$1"
+
+  node - "$source_root" <<'NODE'
+const fs = require("fs");
+const path = require("path");
+
+const sourceRoot = process.argv[2];
+const matches = new Set();
+
+function walk(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === "node_modules" || entry.name === ".git") {
+      continue;
+    }
+
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      walk(fullPath);
+      continue;
+    }
+
+    if (entry.name !== "package.json") {
+      continue;
+    }
+
+    const parsed = JSON.parse(fs.readFileSync(fullPath, "utf8"));
+    if (parsed.openclaw?.bundle?.stageRuntimeDependencies === true) {
+      matches.add(path.basename(path.dirname(fullPath)));
+    }
+  }
+}
+
+walk(sourceRoot);
+for (const pluginId of Array.from(matches).sort()) {
+  console.log(pluginId);
+}
+NODE
+}
+
+order_stage_runtime_deps_candidates() {
+  local -n raw_candidates_ref="$1"
+  local ordered=()
+  local seen_ids=()
+  local plugin_id
+  local preferred_id
+
+  for preferred_id in "${STAGE_RUNTIME_DEPS_VALIDATION_PREFERENCE[@]}"; do
+    for plugin_id in "${raw_candidates_ref[@]}"; do
+      if [[ "$plugin_id" == "$preferred_id" ]]; then
+        ordered+=("$plugin_id")
+        seen_ids+=("$plugin_id")
+      fi
+    done
+  done
+
+  for plugin_id in "${raw_candidates_ref[@]}"; do
+    if [[ " ${seen_ids[*]} " == *" ${plugin_id} "* ]]; then
+      continue
+    fi
+    ordered+=("$plugin_id")
+  done
+
+  printf '%s\n' "${ordered[@]}"
+}
+
+validate_staged_runtime_deps_variant() {
+  local package_path="$1"
+  local plugin_id="$2"
+
+  node - "$package_path" "$plugin_id" <<'NODE'
+const fs = require("fs");
+const path = require("path");
+
+const packagePath = process.argv[2];
+const pluginId = process.argv[3];
+const pluginRoot = path.join(packagePath, "lib", "openclaw", "dist", "extensions", pluginId);
+const pluginPackageJsonPath = path.join(pluginRoot, "package.json");
+const pluginNodeModulesDir = path.join(pluginRoot, "node_modules");
+
+if (!fs.existsSync(pluginPackageJsonPath)) {
+  throw new Error(`missing package.json for bundled plugin ${pluginId}`);
+}
+if (!fs.existsSync(pluginNodeModulesDir)) {
+  throw new Error(`missing node_modules for bundled plugin ${pluginId}`);
+}
+
+const pluginPackageJson = JSON.parse(fs.readFileSync(pluginPackageJsonPath, "utf8"));
+const dependencies = pluginPackageJson.dependencies ?? {};
+
+for (const [dependencyName, requestedSpec] of Object.entries(dependencies)) {
+  const dependencyPackageJsonPath = path.join(
+    pluginNodeModulesDir,
+    ...dependencyName.split("/"),
+    "package.json",
+  );
+
+  if (!fs.existsSync(dependencyPackageJsonPath)) {
+    throw new Error(`missing staged dependency ${dependencyName} for bundled plugin ${pluginId}`);
+  }
+
+  const installedVersion = JSON.parse(fs.readFileSync(dependencyPackageJsonPath, "utf8")).version;
+  if (/^[0-9]+\.[0-9]+\.[0-9]+(?:[-+].+)?$/.test(requestedSpec) && installedVersion !== requestedSpec) {
+    throw new Error(
+      `version mismatch for ${dependencyName} in bundled plugin ${pluginId}: expected ${requestedSpec}, got ${installedVersion}`,
+    );
+  }
+}
+NODE
+}
 
 resolve_latest_stable_tag() {
   gh api repos/openclaw/openclaw/releases --paginate \
@@ -130,6 +258,7 @@ log "openclaw: ${OLD_REV:0:7} → ${NEW_REV:0:7}"
 
 TMP=$(mktemp -d)
 TMPDIRS+=("$TMP")
+UPSTREAM_SRC_DIR="${TMP}/openclaw-${NEW_REV}"
 
 log "Downloading upstream source..."
 curl -fSL --max-time 120 \
@@ -138,7 +267,7 @@ curl -fSL --max-time 120 \
 
 ensure_pruner_deps
 log "Pruning lockfile..."
-node "$PRUNER_DIR/prune.mjs" "${TMP}/openclaw-${NEW_REV}" "$TMP/pruned"
+node "$PRUNER_DIR/prune.mjs" "$UPSTREAM_SRC_DIR" "$TMP/pruned"
 mv "$TMP/pruned/pnpm-lock.yaml" "$LOCKFILE_OUT"
 
 # --- Phase 3: Get pnpmDepsHash ---
@@ -187,6 +316,41 @@ if [[ "$DO_BUILD" == "true" ]]; then
       exit 1
     fi
   done
+
+  mapfile -t RAW_STAGE_CANDIDATES < <(find_stage_runtime_deps_candidates "$UPSTREAM_SRC_DIR")
+  mapfile -t STAGE_CANDIDATES < <(order_stage_runtime_deps_candidates RAW_STAGE_CANDIDATES)
+  if [[ ${#STAGE_CANDIDATES[@]} -eq 0 ]]; then
+    log "No bundled plugins currently request build-time runtime-deps staging."
+  else
+    STAGED_VARIANT_OK=false
+    for plugin_id in "${STAGE_CANDIDATES[@]}"; do
+      if [[ ! -d "${PKG_PATH}/lib/openclaw/dist/extensions/${plugin_id}" ]]; then
+        warn "Skipping staged runtime-deps validation for missing packaged plugin ${plugin_id}"
+        continue
+      fi
+      if [[ -d "${PKG_PATH}/lib/openclaw/dist/extensions/${plugin_id}/node_modules" ]]; then
+        warn "Default package unexpectedly staged runtime deps for ${plugin_id}"
+        exit 1
+      fi
+
+      if STAGED_VARIANT_PATH="$(build_staged_runtime_deps_variant "$plugin_id")"; then
+        if [[ -d "${STAGED_VARIANT_PATH}/lib/openclaw/dist/extensions/${plugin_id}/node_modules" ]]; then
+          validate_staged_runtime_deps_variant "$STAGED_VARIANT_PATH" "$plugin_id"
+          log "Validated staged runtime deps for bundled plugin ${plugin_id}"
+          STAGED_VARIANT_OK=true
+          break
+        fi
+        warn "Missing staged runtime deps for ${plugin_id} in ${STAGED_VARIANT_PATH}"
+      else
+        warn "Staged runtime-deps build failed for ${plugin_id}; trying next candidate"
+      fi
+    done
+
+    if [[ "$STAGED_VARIANT_OK" != "true" ]]; then
+      warn "Failed to validate build-time staged runtime deps for bundled plugins: ${STAGE_CANDIDATES[*]}"
+      exit 1
+    fi
+  fi
 
   log "All validation checks passed."
 else

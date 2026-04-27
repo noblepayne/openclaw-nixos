@@ -9,6 +9,7 @@ This flake provides a simplified, server-oriented build that strips away 18,000+
 - **Lean Build**: Focuses on the gateway and core runtime. No home-manager, no macOS cruft, no auto-generated 15k-line schema.
 - **Smart Dependency Pruning**: Uses a custom lockfile pruner to strip ~200 platform-specific binaries (Windows, Android, etc.) reducing build overhead and store bloat.
 - **Composable Surface**: Exposes a package, shared rendering library, and both system-service and user-service NixOS modules.
+- **Build-Time Runtime Deps**: Can selectively stage bundled plugin runtime dependencies during the package build, so chosen packaged plugins avoid npm installs at service startup.
 - **NixOS Native**: Simple, robust system-service module with hardening and state management based on real-world deployments.
 - **Deterministic**: Standardized build flow with verified pnpm dependency integrity.
 
@@ -57,6 +58,20 @@ Recommended approaches:
 3.  **Merged Config**: Use both! The Nix module will merge your `config` attrset on top of your `configFile`, allowing you to keep structure in Nix and secrets in a private file.
 
 The system adapter uses `services.openclaw`. The user-service adapter uses `services.openclawUser`.
+
+To pre-stage bundled plugin runtime deps for a selected plugin set, override the package. The default remains conservative: no bundled plugin runtime deps are staged unless you opt a plugin in.
+
+```nix
+{
+  services.openclaw.package =
+    openclaw-nixos.lib.withBundledRuntimeDeps {
+      package = openclaw-nixos.packages.${pkgs.system}.openclaw-gateway;
+      pluginIds = [ "telegram" ];
+    };
+}
+```
+
+Set `preserveUpstream = true;` if you need to preserve upstream's staged-plugin set instead of selecting an explicit subset.
 
 ## Documentation
 

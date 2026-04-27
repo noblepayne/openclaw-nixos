@@ -29,6 +29,19 @@ let
     }:
     builtins.toJSON cronJobs;
 
+  withBundledRuntimeDeps =
+    {
+      package,
+      pluginIds ? [ ],
+      preserveUpstream ? false,
+    }:
+    package.override {
+      stagedRuntimeDepsPluginIds =
+        if preserveUpstream
+        then null
+        else pluginIds;
+    };
+
   mkConfigPath = stateDir: "${stateDir}/openclaw.json";
   mkCronDir = stateDir: "${stateDir}/cron";
   mkCronJobsPath = stateDir: "${mkCronDir stateDir}/jobs.json";
@@ -40,6 +53,7 @@ in
     mergeConfig
     renderConfigJson
     renderCronJobsJson
+    withBundledRuntimeDeps
     mkConfigPath
     mkCronDir
     mkCronJobsPath

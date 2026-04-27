@@ -45,6 +45,18 @@ The two service adapters intentionally use different option roots.
   - defaults `stateDir` under the user's home directory
   - expects the host to manage the target user account via `users.users`
 
+Both adapters consume an OpenClaw package. If you need build-time staged bundled plugin runtime deps, override the package itself rather than expecting a separate module option:
+
+```nix
+services.openclaw.package =
+  openclaw-nixos.lib.withBundledRuntimeDeps {
+    package = openclaw-nixos.packages.${pkgs.system}.openclaw-gateway;
+    pluginIds = [ "telegram" ];
+  };
+```
+
+Set `preserveUpstream = true;` to preserve upstream's staged bundled-plugin set, or pass an explicit list to keep the package hermetic for only the plugins you want.
+
 ### `services.openclaw.enable`
 Type: `bool`, Default: `false`
 

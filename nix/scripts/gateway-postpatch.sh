@@ -41,8 +41,3 @@ if [ -f src/docker-setup.test.ts ]; then
     sed -i 's|if \[\[ "${1:-}" == "compose" \]\]; then|if [ "${1:-}" = "compose" ]; then|' src/docker-setup.test.ts
   fi
 fi
-
-# Patch stage-bundled-plugin-runtime-deps.mjs to skip npm install during Nix build
-if [ -f scripts/stage-bundled-plugin-runtime-deps.mjs ]; then
-  sed -i 's/export function stageBundledPluginRuntimeDeps(params = {}) {/export function stageBundledPluginRuntimeDeps(params = {}) { return;/' scripts/stage-bundled-plugin-runtime-deps.mjs
-fi

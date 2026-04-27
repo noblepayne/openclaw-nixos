@@ -52,10 +52,17 @@
 └───────────┬─────────────┘
             │
 ┌───────────▼─────────────┐
+│  selective runtime deps │  ← opt-in bundled plugin staging
+│  (dist/extensions/*)    │
+└───────────┬─────────────┘
+            │
+┌───────────▼─────────────┐
 │  installPhase           │  ← $out/lib/openclaw/{dist,node_modules}
 │  makeWrapper            │  ← $out/bin/openclaw
 └─────────────────────────┘
 ```
+
+Bundled plugin runtime dependency staging is now a package concern. `openclaw-gateway` can opt specific bundled plugin IDs into build-time staging, and the Nix wrapper hard-fails if upstream tries to fall back to `npm install`.
 
 ## Runtime services
 
