@@ -77,14 +77,16 @@
       pkgs,
       ...
     }: {
-      _module.args.openclawSystemDefaultPackage = self.packages.${pkgs.system}.openclaw-gateway;
+      _module.args.openclawSystemDefaultPackage =
+        self.packages.${pkgs.stdenv.hostPlatform.system}.openclaw-gateway;
       imports = [ path ];
     };
     mkUserModule = path: {
       pkgs,
       ...
     }: {
-      _module.args.openclawUserDefaultPackage = self.packages.${pkgs.system}.openclaw-gateway;
+      _module.args.openclawUserDefaultPackage =
+        self.packages.${pkgs.stdenv.hostPlatform.system}.openclaw-gateway;
       imports = [ path ];
     };
     systemServiceModule = mkSystemModule ./nix/modules/openclaw.nix;
