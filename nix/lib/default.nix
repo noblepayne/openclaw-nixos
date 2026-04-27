@@ -135,6 +135,14 @@ let
       )
     );
 
+  enabledBundledPluginIds =
+    bundledPlugins:
+    lib.sort builtins.lessThan (
+      builtins.attrNames (
+        lib.filterAttrs (_: pluginCfg: pluginCfg.enable or false) bundledPlugins
+      )
+    );
+
   withBundledRuntimeDeps =
     {
       package,
@@ -175,6 +183,7 @@ in
     renderConfigJson
     renderCronJobsJson
     renderPluginsConfig
+    enabledBundledPluginIds
     bundledRuntimeDepsPluginIds
     withBundledRuntimeDeps
     withBundledRuntimeDepsFromPlugins

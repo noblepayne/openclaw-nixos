@@ -23,6 +23,12 @@
         self =
           baseOpenclawLib
           // {
+        mkBundledPluginsPackage =
+          {
+            pkgs,
+            ...
+          }@args:
+          pkgs.callPackage ./nix/packages/openclaw-bundled-plugins.nix (builtins.removeAttrs args [ "pkgs" ]);
         mkBundledRuntimeDepsPackage =
           {
             pkgs,

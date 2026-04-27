@@ -15,6 +15,9 @@ runCommand "openclaw-bundled-runtime-deps-${package.version or "unknown"}" {
   set -euo pipefail
 
   package_root="${package}/lib/openclaw"
+  if [ ! -f "$package_root/package.json" ]; then
+    package_root="${package}"
+  fi
   extensions_dir="$package_root/dist/extensions"
   plugin_ids='${pluginIdsJson}'
 

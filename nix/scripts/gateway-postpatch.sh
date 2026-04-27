@@ -43,11 +43,52 @@ if [ -f src/docker-setup.test.ts ]; then
 fi
 
 if [ -f src/plugins/bundled-runtime-deps.ts ]; then
-  if ! grep -q "resolveExistingExternalBundledRuntimeDepsInstallRoot" src/plugins/bundled-runtime-deps.ts; then
-    perl -0pi -e 's@function resolveExternalBundledRuntimeDepsInstallRoot\(params: \{\n  pluginRoot: string;\n  env: NodeJS\.ProcessEnv;\n\}\): string \{\n  const packageRoot = resolveBundledPluginPackageRoot\(params\.pluginRoot\) \?\? params\.pluginRoot;\n  const version = sanitizePathSegment\(readPackageVersion\(packageRoot\)\);\n  const packageKey = `openclaw-\$\{version\}-\$\{createPathHash\(packageRoot\)\}`;\n  return path\.join\(resolveBundledRuntimeDepsExternalBaseDir\(params\.env\), packageKey\);\n\}\n@function resolveExternalBundledRuntimeDepsInstallRoot(params: {\n  pluginRoot: string;\n  env: NodeJS.ProcessEnv;\n}): string {\n  const packageRoot = resolveBundledPluginPackageRoot(params.pluginRoot) ?? params.pluginRoot;\n  const version = sanitizePathSegment(readPackageVersion(packageRoot));\n  const packageKey = "openclaw-" + version + "-" + createPathHash(packageRoot);\n  return path.join(resolveBundledRuntimeDepsExternalBaseDir(params.env), packageKey);\n}\n\nfunction resolveExistingExternalBundledRuntimeDepsInstallRoot(params: {\n  pluginRoot: string;\n  env: NodeJS.ProcessEnv;\n}): string | null {\n  const packageRoot = resolveBundledPluginPackageRoot(params.pluginRoot);\n  if (!packageRoot) {\n    return null;\n  }\n  const externalBaseDir = path.resolve(resolveBundledRuntimeDepsExternalBaseDir(params.env));\n  const resolvedPackageRoot = path.resolve(packageRoot);\n  if (\n    resolvedPackageRoot === externalBaseDir ||\n    resolvedPackageRoot.startsWith(externalBaseDir + path.sep)\n  ) {\n    return packageRoot;\n  }\n  return null;\n}\n@' src/plugins/bundled-runtime-deps.ts
+  python3 <<'PY'
+from pathlib import Path
 
-    perl -0pi -e 's@const env = options\.env \?\? process\.env;\n  const externalRoot = resolveExternalBundledRuntimeDepsInstallRoot\(\{\n@const env = options.env ?? process.env;\n  const existingExternalRoot = resolveExistingExternalBundledRuntimeDepsInstallRoot({\n    pluginRoot: path.join(packageRoot, "dist", "extensions", "__package__"),\n    env,\n  });\n  if (existingExternalRoot) {\n    return existingExternalRoot;\n  }\n  const externalRoot = resolveExternalBundledRuntimeDepsInstallRoot({\n@' src/plugins/bundled-runtime-deps.ts
+path = Path("src/plugins/bundled-runtime-deps.ts")
+text = path.read_text()
 
-    perl -0pi -e 's@const env = options\.env \?\? process\.env;\n  const externalRoot = resolveExternalBundledRuntimeDepsInstallRoot\(\{ pluginRoot, env \}\);\n@const env = options.env ?? process.env;\n  const existingExternalRoot = resolveExistingExternalBundledRuntimeDepsInstallRoot({ pluginRoot, env });\n  if (existingExternalRoot) {\n    return existingExternalRoot;\n  }\n  const externalRoot = resolveExternalBundledRuntimeDepsInstallRoot({ pluginRoot, env });\n@' src/plugins/bundled-runtime-deps.ts
-  fi
+if "resolveExistingExternalBundledRuntimeDepsInstallRoot" not in text:
+    old = """function resolveExternalBundledRuntimeDepsInstallRoot(params: {\n  pluginRoot: string;\n  env: NodeJS.ProcessEnv;\n}): string {\n  const packageRoot = resolveBundledPluginPackageRoot(params.pluginRoot) ?? params.pluginRoot;\n  const version = sanitizePathSegment(readPackageVersion(packageRoot));\n  const packageKey = `openclaw-${version}-${createPathHash(packageRoot)}`;\n  return path.join(resolveBundledRuntimeDepsExternalBaseDir(params.env), packageKey);\n}\n"""
+    new = """function resolveExternalBundledRuntimeDepsInstallRoot(params: {\n  pluginRoot: string;\n  env: NodeJS.ProcessEnv;\n}): string {\n  const packageRoot = resolveBundledPluginPackageRoot(params.pluginRoot) ?? params.pluginRoot;\n  const version = sanitizePathSegment(readPackageVersion(packageRoot));\n  const packageKey = `openclaw-${version}-${createPathHash(packageRoot)}`;\n  return path.join(resolveBundledRuntimeDepsExternalBaseDir(params.env), packageKey);\n}\n\nfunction resolveExistingExternalBundledRuntimeDepsInstallRoot(params: {\n  pluginRoot: string;\n  env: NodeJS.ProcessEnv;\n}): string | null {\n  const packageRoot = resolveBundledPluginPackageRoot(params.pluginRoot);\n  if (!packageRoot) {\n    return null;\n  }\n  const externalBaseDir = path.resolve(resolveBundledRuntimeDepsExternalBaseDir(params.env));\n  const resolvedPackageRoot = path.resolve(packageRoot);\n  if (\n    resolvedPackageRoot === externalBaseDir ||\n    resolvedPackageRoot.startsWith(`${externalBaseDir}${path.sep}`)\n  ) {\n    return packageRoot;\n  }\n  return null;\n}\n"""
+    if old not in text:
+        raise SystemExit("failed to patch resolveExternalBundledRuntimeDepsInstallRoot")
+    text = text.replace(old, new, 1)
+
+package_old = """export function resolveBundledRuntimeDependencyPackageInstallRoot(\n  packageRoot: string,\n  options: { env?: NodeJS.ProcessEnv; forceExternal?: boolean } = {},\n): string {\n  const env = options.env ?? process.env;\n  if (\n    options.forceExternal ||\n    env.OPENCLAW_PLUGIN_STAGE_DIR?.trim() ||\n    env.STATE_DIRECTORY?.trim()\n  ) {\n    return resolveExternalBundledRuntimeDepsInstallRoot({\n      pluginRoot: path.join(packageRoot, \"dist\", \"extensions\", \"__package__\"),\n      env,\n    });\n  }\n"""
+package_new = """export function resolveBundledRuntimeDependencyPackageInstallRoot(\n  packageRoot: string,\n  options: { env?: NodeJS.ProcessEnv; forceExternal?: boolean } = {},\n): string {\n  const env = options.env ?? process.env;\n  if (\n    options.forceExternal ||\n    env.OPENCLAW_PLUGIN_STAGE_DIR?.trim() ||\n    env.STATE_DIRECTORY?.trim()\n  ) {\n    const existingExternalRoot = resolveExistingExternalBundledRuntimeDepsInstallRoot({\n      pluginRoot: path.join(packageRoot, \"dist\", \"extensions\", \"__package__\"),\n      env,\n    });\n    if (existingExternalRoot) {\n      return existingExternalRoot;\n    }\n    return resolveExternalBundledRuntimeDepsInstallRoot({\n      pluginRoot: path.join(packageRoot, \"dist\", \"extensions\", \"__package__\"),\n      env,\n    });\n  }\n"""
+if package_old in text and "const existingExternalRoot = resolveExistingExternalBundledRuntimeDepsInstallRoot({\n      pluginRoot: path.join(packageRoot, \"dist\", \"extensions\", \"__package__\")" not in text:
+    text = text.replace(package_old, package_new, 1)
+
+plugin_old = """export function resolveBundledRuntimeDependencyInstallRoot(\n  pluginRoot: string,\n  options: { env?: NodeJS.ProcessEnv; forceExternal?: boolean } = {},\n): string {\n  const env = options.env ?? process.env;\n  if (\n    options.forceExternal ||\n    env.OPENCLAW_PLUGIN_STAGE_DIR?.trim() ||\n    env.STATE_DIRECTORY?.trim()\n  ) {\n    return resolveExternalBundledRuntimeDepsInstallRoot({ pluginRoot, env });\n  }\n"""
+plugin_new = """export function resolveBundledRuntimeDependencyInstallRoot(\n  pluginRoot: string,\n  options: { env?: NodeJS.ProcessEnv; forceExternal?: boolean } = {},\n): string {\n  const env = options.env ?? process.env;\n  if (\n    options.forceExternal ||\n    env.OPENCLAW_PLUGIN_STAGE_DIR?.trim() ||\n    env.STATE_DIRECTORY?.trim()\n  ) {\n    const existingExternalRoot = resolveExistingExternalBundledRuntimeDepsInstallRoot({ pluginRoot, env });\n    if (existingExternalRoot) {\n      return existingExternalRoot;\n    }\n    return resolveExternalBundledRuntimeDepsInstallRoot({ pluginRoot, env });\n  }\n"""
+if plugin_old in text and "const existingExternalRoot = resolveExistingExternalBundledRuntimeDepsInstallRoot({ pluginRoot, env });" not in text:
+    text = text.replace(plugin_old, plugin_new, 1)
+
+path.write_text(text)
+PY
+fi
+
+if [ -f src/plugins/loader.ts ]; then
+  python3 <<'PY'
+from pathlib import Path
+
+path = Path("src/plugins/loader.ts")
+text = path.read_text()
+
+if "copyBundledPluginRuntimePackageMetadata" not in text:
+    anchor = """function prepareBundledPluginRuntimeDistMirror(params: {\n  installRoot: string;\n  pluginRoot: string;\n}): string {\n"""
+    helper = """function copyBundledPluginRuntimePackageMetadata(params: {\n  installRoot: string;\n  pluginRoot: string;\n}): void {\n  const packageRoot = path.dirname(path.dirname(path.dirname(path.resolve(params.pluginRoot))));\n  const sourcePackageJson = path.join(packageRoot, "package.json");\n  const targetPackageJson = path.join(params.installRoot, "package.json");\n  if (fs.existsSync(sourcePackageJson) && !fs.existsSync(targetPackageJson)) {\n    fs.copyFileSync(sourcePackageJson, targetPackageJson);\n  }\n}\n\n""" + anchor
+    if anchor not in text:
+        raise SystemExit("failed to locate prepareBundledPluginRuntimeDistMirror anchor")
+    text = text.replace(anchor, helper, 1)
+
+marker = """  const mirrorDistRoot = path.join(params.installRoot, sourceDistRootName);\n  const mirrorExtensionsRoot = path.join(mirrorDistRoot, "extensions");\n"""
+replacement = """  const mirrorDistRoot = path.join(params.installRoot, sourceDistRootName);\n  const mirrorExtensionsRoot = path.join(mirrorDistRoot, "extensions");\n  copyBundledPluginRuntimePackageMetadata(params);\n"""
+if marker in text and "copyBundledPluginRuntimePackageMetadata(params);" not in text:
+    text = text.replace(marker, replacement, 1)
+
+path.write_text(text)
+PY
 fi

@@ -65,6 +65,11 @@ let
     package = openclaw-gateway;
     pluginIds = [ "telegram" ];
   };
+  selectedBundledPlugins = openclawLib.mkBundledPluginsPackage {
+    inherit pkgs;
+    package = selectedBundledGateway;
+    pluginIds = [ "telegram" ];
+  };
   selectedBundledRuntimeDeps = openclawLib.mkBundledRuntimeDepsPackage {
     inherit pkgs;
     package = selectedBundledGateway;
@@ -324,6 +329,12 @@ in
     touch "$out"
   '';
 
+  bundled-plugins-package = pkgs.runCommand "openclaw-bundled-plugins-package-check" { } ''
+    test -f ${selectedBundledPlugins}/package.json
+    test -d ${selectedBundledPlugins}/dist/extensions/telegram
+    touch "$out"
+  '';
+
   bundled-runtime-deps-selected-build = pkgs.runCommand "openclaw-bundled-runtime-deps-selected-check" { } ''
     test -d ${selectedBundledGateway}/lib/openclaw/dist/extensions/telegram/node_modules
     touch "$out"
@@ -335,6 +346,7 @@ in
     test -n "$package_key"
     test -d ${selectedBundledRuntimeDeps}/"$package_key"
     test -d ${selectedBundledRuntimeDeps}/"$package_key"/node_modules
+    test ! -L ${selectedBundledRuntimeDeps}/"$package_key"/node_modules
     test -f ${selectedBundledRuntimeDeps}/.openclaw-selected-plugin-ids.json
     touch "$out"
   '';
