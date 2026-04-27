@@ -300,6 +300,8 @@ in
     assert systemModuleEval.config.users.groups ? openclaw;
     assert lib.hasInfix "fixture-with-runtime-deps" systemSetupScript;
     assert lib.hasInfix "plugin-runtime-deps" systemSetupScript;
+    assert lib.hasInfix "/dist" systemSetupScript;
+    assert lib.hasInfix "node_modules/openclaw" systemSetupScript;
     assert lib.hasInfix "/var/lib/openclaw/extensions/fixture-with-runtime-deps" systemSetupScript;
     pkgs.runCommand "openclaw-module-eval-system-service-check" { } "touch $out";
 
@@ -314,6 +316,8 @@ in
     assert userModuleEval.config.users.users.chris.linger;
     assert lib.hasInfix "fixture-no-runtime-deps" userActivationScript;
     assert lib.hasInfix "plugin-runtime-deps" userActivationScript;
+    assert lib.hasInfix "/dist" userActivationScript;
+    assert lib.hasInfix "node_modules/openclaw" userActivationScript;
     assert lib.hasInfix "/home/chris/.local/share/openclaw/extensions/fixture-no-runtime-deps" userActivationScript;
     pkgs.runCommand "openclaw-module-eval-user-service-check" { } "touch $out";
 
@@ -331,7 +335,11 @@ in
 
   bundled-plugins-package = pkgs.runCommand "openclaw-bundled-plugins-package-check" { } ''
     test -f ${selectedBundledPlugins}/package.json
+    test -d ${selectedBundledPlugins}/dist
     test -d ${selectedBundledPlugins}/dist/extensions/telegram
+    test -d ${selectedBundledPlugins}/dist/extensions/node_modules/openclaw
+    test -f ${selectedBundledPlugins}/dist/plugin-sdk/channel-entry-contract.js
+    test ! -e ${selectedBundledPlugins}/dist/extensions/googlechat
     touch "$out"
   '';
 
@@ -347,6 +355,8 @@ in
     test -d ${selectedBundledRuntimeDeps}/"$package_key"
     test -d ${selectedBundledRuntimeDeps}/"$package_key"/node_modules
     test ! -L ${selectedBundledRuntimeDeps}/"$package_key"/node_modules
+    test ! -e ${selectedBundledRuntimeDeps}/"$package_key"/dist
+    test ! -e ${selectedBundledRuntimeDeps}/"$package_key"/node_modules/openclaw
     test -f ${selectedBundledRuntimeDeps}/.openclaw-selected-plugin-ids.json
     touch "$out"
   '';
