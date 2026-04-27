@@ -81,7 +81,12 @@ For declarative plugin config at the module layer, enable bundled plugins and me
 
 Bundled plugins declared this way are merged into the generated `plugins.allow` and `plugins.entries` config automatically.
 
-If you set `bundledPlugins.<id>.stageRuntimeDeps = true`, the module also wraps the service package automatically so that bundled plugin's runtime deps are staged at build time.
+If you set `bundledPlugins.<id>.stageRuntimeDeps = true`, the module now does two things automatically:
+
+- wraps the service package so that bundled plugin runtime deps are prepared at build time
+- builds a bundled runtime-deps artifact and copies it into `${stateDir}/plugin-runtime-deps` during setup, then sets `OPENCLAW_PLUGIN_STAGE_DIR` for the service
+
+That keeps packaged deployments off the runtime `npm install` path while still giving OpenClaw a writable external stage root.
 
 For packaged local plugins, build a plugin derivation once and attach it declaratively:
 
@@ -129,7 +134,7 @@ in {
 
 For more control, build the vendored runtime-deps tree separately with `openclaw-nixos.lib.mkPluginRuntimeDepsFromNpmLock` and pass it to `mkPluginPackage` as `runtimeDepsPackage`.
 
-To pre-stage bundled plugin runtime deps for a selected plugin set, override the package. The default remains conservative: no bundled plugin runtime deps are staged unless you opt a plugin in.
+To pre-stage bundled plugin runtime deps for a selected plugin set directly, override the package. The default remains conservative: no bundled plugin runtime deps are staged unless you opt a plugin in.
 
 ```nix
 {
@@ -142,6 +147,8 @@ To pre-stage bundled plugin runtime deps for a selected plugin set, override the
 ```
 
 Set `preserveUpstream = true;` if you need to preserve upstream's staged-plugin set instead of selecting an explicit subset.
+
+For lower-level composition, `openclaw-nixos.lib.mkBundledRuntimeDepsPackage` builds the package-scoped runtime-deps artifact directly.
 
 ## Documentation
 

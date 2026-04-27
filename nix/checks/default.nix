@@ -65,6 +65,11 @@ let
     package = openclaw-gateway;
     pluginIds = [ "telegram" ];
   };
+  selectedBundledRuntimeDeps = openclawLib.mkBundledRuntimeDepsPackage {
+    inherit pkgs;
+    package = selectedBundledGateway;
+    pluginIds = [ "telegram" ];
+  };
 
   systemModuleEval =
     nixpkgs.lib.nixosSystem {
@@ -284,10 +289,12 @@ in
       == "${selectedBundledGateway}/bin/openclaw gateway";
     assert systemEnvironment.OPENCLAW_CONFIG_PATH == "/var/lib/openclaw/openclaw.json";
     assert systemEnvironment.OPENCLAW_BUNDLED_PLUGINS_DIR == "/var/lib/openclaw/dist/extensions";
+    assert systemEnvironment.OPENCLAW_PLUGIN_STAGE_DIR == "/var/lib/openclaw/plugin-runtime-deps";
     assert builtins.hasAttr "CONFIG_HASH" systemEnvironment;
     assert systemModuleEval.config.users.users.openclaw.isSystemUser;
     assert systemModuleEval.config.users.groups ? openclaw;
     assert lib.hasInfix "fixture-with-runtime-deps" systemSetupScript;
+    assert lib.hasInfix "plugin-runtime-deps" systemSetupScript;
     assert lib.hasInfix "/var/lib/openclaw/extensions/fixture-with-runtime-deps" systemSetupScript;
     pkgs.runCommand "openclaw-module-eval-system-service-check" { } "touch $out";
 
@@ -297,8 +304,11 @@ in
       == "/home/chris/.local/share/openclaw";
     assert userEnvironment.HOME == "/home/chris";
     assert userEnvironment.OPENCLAW_CONFIG_PATH == "/home/chris/.local/share/openclaw/openclaw.json";
+    assert userEnvironment.OPENCLAW_BUNDLED_PLUGINS_DIR == "/home/chris/.local/share/openclaw/dist/extensions";
+    assert userEnvironment.OPENCLAW_PLUGIN_STAGE_DIR == "/home/chris/.local/share/openclaw/plugin-runtime-deps";
     assert userModuleEval.config.users.users.chris.linger;
     assert lib.hasInfix "fixture-no-runtime-deps" userActivationScript;
+    assert lib.hasInfix "plugin-runtime-deps" userActivationScript;
     assert lib.hasInfix "/home/chris/.local/share/openclaw/extensions/fixture-no-runtime-deps" userActivationScript;
     pkgs.runCommand "openclaw-module-eval-user-service-check" { } "touch $out";
 
@@ -316,6 +326,16 @@ in
 
   bundled-runtime-deps-selected-build = pkgs.runCommand "openclaw-bundled-runtime-deps-selected-check" { } ''
     test -d ${selectedBundledGateway}/lib/openclaw/dist/extensions/telegram/node_modules
+    touch "$out"
+  '';
+
+  bundled-runtime-deps-package = pkgs.runCommand "openclaw-bundled-runtime-deps-package-check" { } ''
+    test -f ${selectedBundledRuntimeDeps}/.openclaw-package-key
+    package_key="$(cat ${selectedBundledRuntimeDeps}/.openclaw-package-key)"
+    test -n "$package_key"
+    test -d ${selectedBundledRuntimeDeps}/"$package_key"
+    test -d ${selectedBundledRuntimeDeps}/"$package_key"/node_modules
+    test -f ${selectedBundledRuntimeDeps}/.openclaw-selected-plugin-ids.json
     touch "$out"
   '';
 

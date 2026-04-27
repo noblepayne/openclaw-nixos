@@ -18,6 +18,7 @@
     package = cfg.package;
     inherit (cfg) bundledPlugins;
   };
+  bundledRuntimeDepsPluginIds = openclawLib.bundledRuntimeDepsPluginIds cfg.bundledPlugins;
   hasConfiguredUser = cfg.user != null;
   hasDeclaredUser =
     hasConfiguredUser
@@ -49,10 +50,19 @@
     else
       "${resolvedHomeDirectory}/.local/share/openclaw";
   extensionsDir = openclawLib.mkExtensionsDir stateDir;
+  bundledRuntimeDepsDir = openclawLib.mkBundledRuntimeDepsDir stateDir;
   localPluginsDir = openclawLib.mkLocalPluginsDir stateDir;
   distDir = openclawLib.mkDistDir stateDir;
   packageDist = "${resolvedPackage}/lib/openclaw/dist";
   packageNodeModules = "${resolvedPackage}/lib/openclaw/node_modules";
+  bundledRuntimeDepsPackage =
+    if bundledRuntimeDepsPluginIds == []
+    then null
+    else
+      pkgs.callPackage ../packages/openclaw-bundled-runtime-deps.nix {
+        package = resolvedPackage;
+        pluginIds = bundledRuntimeDepsPluginIds;
+      };
   configPath = openclawLib.mkConfigPath stateDir;
   cronDir = openclawLib.mkCronDir stateDir;
   cronJobsPath = openclawLib.mkCronJobsPath stateDir;
@@ -317,6 +327,12 @@ in
         ln -sfn ${packageNodeModules} ${distDir}/node_modules
       '';
 
+      setupBundledRuntimeDeps = lib.optionalString (bundledRuntimeDepsPackage != null) ''
+        rm -rf ${bundledRuntimeDepsDir}
+        mkdir -p ${bundledRuntimeDepsDir}
+        cp -r ${bundledRuntimeDepsPackage}/. ${bundledRuntimeDepsDir}/
+      '';
+
       setupLocalPlugins = ''
         mkdir -p ${localPluginsDir}
         if [ -f ${managedLocalPluginsManifest} ]; then
@@ -357,6 +373,7 @@ in
         setupConfig
         setupCron
         setupExtensions
+        setupBundledRuntimeDeps
         setupLocalPlugins
         "chown -R ${cfg.user}:${resolvedGroup} ${stateDir}"
       ];
@@ -385,6 +402,9 @@ in
         }
         // lib.optionalAttrs cfg.mutableExtensionsDir {
           OPENCLAW_BUNDLED_PLUGINS_DIR = extensionsDir;
+        }
+        // lib.optionalAttrs (bundledRuntimeDepsPackage != null) {
+          OPENCLAW_PLUGIN_STAGE_DIR = bundledRuntimeDepsDir;
         }
         // lib.optionalAttrs hasConfig {
           CONFIG_HASH = builtins.hashString "sha256" (builtins.toJSON mergedConfig);

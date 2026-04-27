@@ -18,12 +18,22 @@
     package = cfg.package;
     inherit (cfg) bundledPlugins;
   };
+  bundledRuntimeDepsPluginIds = openclawLib.bundledRuntimeDepsPluginIds cfg.bundledPlugins;
   stateDir = cfg.stateDir;
   extensionsDir = openclawLib.mkExtensionsDir stateDir;
+  bundledRuntimeDepsDir = openclawLib.mkBundledRuntimeDepsDir stateDir;
   localPluginsDir = openclawLib.mkLocalPluginsDir stateDir;
   distDir = openclawLib.mkDistDir stateDir;
   packageDist = "${resolvedPackage}/lib/openclaw/dist";
   packageNodeModules = "${resolvedPackage}/lib/openclaw/node_modules";
+  bundledRuntimeDepsPackage =
+    if bundledRuntimeDepsPluginIds == []
+    then null
+    else
+      pkgs.callPackage ../packages/openclaw-bundled-runtime-deps.nix {
+        package = resolvedPackage;
+        pluginIds = bundledRuntimeDepsPluginIds;
+      };
   configPath = openclawLib.mkConfigPath stateDir;
   cronDir = openclawLib.mkCronDir stateDir;
   cronJobsPath = openclawLib.mkCronJobsPath stateDir;
@@ -297,15 +307,21 @@ in {
       before = ["openclaw.service"];
 
       script = let
-        setupExtensions = lib.optionalString cfg.mutableExtensionsDir ''
-          rm -rf ${distDir}
-          mkdir -p ${distDir}
-          cp -r ${packageDist}/* ${distDir}/
-          ln -sfn ${packageNodeModules} ${distDir}/node_modules
-        '';
+      setupExtensions = lib.optionalString cfg.mutableExtensionsDir ''
+        rm -rf ${distDir}
+        mkdir -p ${distDir}
+        cp -r ${packageDist}/* ${distDir}/
+        ln -sfn ${packageNodeModules} ${distDir}/node_modules
+      '';
 
-        setupLocalPlugins = ''
-          mkdir -p ${localPluginsDir}
+      setupBundledRuntimeDeps = lib.optionalString (bundledRuntimeDepsPackage != null) ''
+        rm -rf ${bundledRuntimeDepsDir}
+        mkdir -p ${bundledRuntimeDepsDir}
+        cp -r ${bundledRuntimeDepsPackage}/. ${bundledRuntimeDepsDir}/
+      '';
+
+      setupLocalPlugins = ''
+        mkdir -p ${localPluginsDir}
           if [ -f ${managedLocalPluginsManifest} ]; then
             while IFS= read -r plugin_id; do
               [ -n "$plugin_id" ] || continue
@@ -339,12 +355,13 @@ in {
         '';
 
         steps = lib.filter (s: s != "") [
-          setupConfig
-          setupCron
-          setupExtensions
-          setupLocalPlugins
-          "chown -R ${cfg.user}:${cfg.group} ${stateDir}"
-        ];
+        setupConfig
+        setupCron
+        setupExtensions
+        setupBundledRuntimeDeps
+        setupLocalPlugins
+        "chown -R ${cfg.user}:${cfg.group} ${stateDir}"
+      ];
       in
         lib.concatStringsSep "\n\n" steps;
     };
@@ -364,6 +381,9 @@ in {
         }
         // lib.optionalAttrs cfg.mutableExtensionsDir {
           OPENCLAW_BUNDLED_PLUGINS_DIR = extensionsDir;
+        }
+        // lib.optionalAttrs (bundledRuntimeDepsPackage != null) {
+          OPENCLAW_PLUGIN_STAGE_DIR = bundledRuntimeDepsDir;
         }
         // lib.optionalAttrs hasConfig {
           CONFIG_HASH = builtins.hashString "sha256" (builtins.toJSON mergedConfig);

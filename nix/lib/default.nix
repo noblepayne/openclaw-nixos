@@ -167,6 +167,7 @@ let
   mkCronJobsPath = stateDir: "${mkCronDir stateDir}/jobs.json";
   mkDistDir = stateDir: "${stateDir}/dist";
   mkExtensionsDir = stateDir: "${mkDistDir stateDir}/extensions";
+  mkBundledRuntimeDepsDir = stateDir: "${stateDir}/plugin-runtime-deps";
 in
 {
   inherit
@@ -182,6 +183,7 @@ in
     mkCronJobsPath
     mkDistDir
     mkExtensionsDir
+    mkBundledRuntimeDepsDir
     mkLocalPluginsDir
     mkLocalPluginInstallPath
     ;

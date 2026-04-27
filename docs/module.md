@@ -122,7 +122,7 @@ Declarative bundled plugin definitions keyed by upstream plugin ID.
 - `enable`: adds the plugin ID to `plugins.allow`
 - `config`: merged into `plugins.entries.<id>.config`
 - `entry`: extra fields merged into `plugins.entries.<id>`
-- `stageRuntimeDeps`: wraps the package so this bundled plugin's runtime deps are staged at build time
+- `stageRuntimeDeps`: wraps the package and prepares an external stage tree so this bundled plugin's runtime deps are available without runtime installs
 
 ```nix
 services.openclaw.bundledPlugins.telegram = {
@@ -132,7 +132,7 @@ services.openclaw.bundledPlugins.telegram = {
 };
 ```
 
-When `stageRuntimeDeps = true`, the module automatically wraps the configured package so that bundled plugin's runtime deps are staged during the build.
+When `stageRuntimeDeps = true`, the module automatically wraps the configured package so that bundled plugin runtime deps are prepared during the build, copied into `${stateDir}/plugin-runtime-deps` during setup, and exposed to the service through `OPENCLAW_PLUGIN_STAGE_DIR`.
 
 ### `services.openclaw.localPlugins`
 Type: `attrsOf submodule`, Default: `{}`

@@ -52,8 +52,8 @@
 └───────────┬─────────────┘
             │
 ┌───────────▼─────────────┐
-│  selective runtime deps │  ← opt-in bundled plugin staging
-│  (dist/extensions/*)    │
+│  selective runtime deps │  ← opt-in bundled plugin prep
+│  + stage artifact       │
 └───────────┬─────────────┘
             │
 ┌───────────▼─────────────┐
@@ -62,7 +62,12 @@
 └─────────────────────────┘
 ```
 
-Bundled plugin runtime dependency staging is now a package concern. `openclaw-gateway` can opt specific bundled plugin IDs into build-time staging, and the Nix wrapper hard-fails if upstream tries to fall back to `npm install`.
+Bundled plugin runtime dependency preparation is now split across two artifacts:
+
+- `openclaw-gateway` can opt specific bundled plugin IDs into build-time staging
+- `openclaw-bundled-runtime-deps` materializes the package-scoped runtime-deps tree consumed through `OPENCLAW_PLUGIN_STAGE_DIR`
+
+The modules copy that runtime-deps artifact into writable state before startup, so packaged deployments avoid runtime `npm install` while still matching upstream's external stage-root contract.
 
 ## Runtime services
 
@@ -71,6 +76,7 @@ The NixOS module creates two services:
 1. **`openclaw-setup.service`** (oneshot, runs as root)
    - Copies bundled extensions from the Nix store to `/var/lib/openclaw/dist/`
    - Symlinks `node_modules` from the store into the mutable `dist/`
+   - Copies prebuilt bundled runtime deps into `/var/lib/openclaw/plugin-runtime-deps/`
    - Writes merged config to `/var/lib/openclaw/openclaw.json`
    - Writes cron jobs to `/var/lib/openclaw/cron/jobs.json`
    - Chowns the state directory to the service user

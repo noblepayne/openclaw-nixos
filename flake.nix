@@ -23,6 +23,12 @@
         self =
           baseOpenclawLib
           // {
+        mkBundledRuntimeDepsPackage =
+          {
+            pkgs,
+            ...
+          }@args:
+          pkgs.callPackage ./nix/packages/openclaw-bundled-runtime-deps.nix (builtins.removeAttrs args [ "pkgs" ]);
         mkPluginRuntimeDepsFromNpmLock =
           {
             pkgs,
@@ -73,6 +79,11 @@
       inherit prunedLockfile pnpmDepsHash;
       openclawSrc = openclaw;
     };
+    openclaw-bundled-runtime-deps = openclawLib.mkBundledRuntimeDepsPackage {
+      inherit pkgs;
+      package = openclaw-gateway;
+      pluginIds = [ ];
+    };
     mkSystemModule = path: {
       pkgs,
       ...
@@ -103,7 +114,7 @@
     };
   in {
     packages.${system} = {
-      inherit openclaw-gateway;
+      inherit openclaw-gateway openclaw-bundled-runtime-deps;
       default = openclaw-gateway;
     };
 
@@ -122,8 +133,13 @@
         inherit prunedLockfile pnpmDepsHash;
         openclawSrc = openclaw;
       };
+      runtimeDepsDrv = final.callPackage ./nix/packages/openclaw-bundled-runtime-deps.nix {
+        package = drv;
+        pluginIds = [ ];
+      };
     in {
       openclaw-gateway = drv;
+      openclaw-bundled-runtime-deps = runtimeDepsDrv;
       openclaw = drv;
     };
   };
