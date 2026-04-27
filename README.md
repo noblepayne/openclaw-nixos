@@ -91,6 +91,8 @@ If you set `bundledPlugins.<id>.stageRuntimeDeps = true`, the module now does tw
 
 That keeps packaged deployments off the runtime `npm install` path while still giving OpenClaw a writable external stage root.
 
+If a downstream needs an extra bundled plugin surface on disk without declaring it as an enabled plugin in generated config, set `extraBundledPluginIds = [ "…" ];`. This is intended for support surfaces such as `speech-core`.
+
 For packaged local plugins, build a plugin derivation once and attach it declaratively:
 
 ```nix

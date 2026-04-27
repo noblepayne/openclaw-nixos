@@ -143,6 +143,18 @@ let
       )
     );
 
+  bundledPluginPackageIds =
+    {
+      bundledPlugins ? { },
+      extraPluginIds ? [ ],
+    }:
+    lib.sort builtins.lessThan (
+      lib.unique (
+        (enabledBundledPluginIds bundledPlugins)
+        ++ extraPluginIds
+      )
+    );
+
   withBundledRuntimeDeps =
     {
       package,
@@ -184,6 +196,7 @@ in
     renderCronJobsJson
     renderPluginsConfig
     enabledBundledPluginIds
+    bundledPluginPackageIds
     bundledRuntimeDepsPluginIds
     withBundledRuntimeDeps
     withBundledRuntimeDepsFromPlugins

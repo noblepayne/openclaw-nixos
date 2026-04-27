@@ -19,6 +19,10 @@
     inherit (cfg) bundledPlugins;
   };
   enabledBundledPluginIds = openclawLib.enabledBundledPluginIds cfg.bundledPlugins;
+  bundledPluginPackageIds = openclawLib.bundledPluginPackageIds {
+    inherit (cfg) bundledPlugins;
+    extraPluginIds = cfg.extraBundledPluginIds;
+  };
   bundledRuntimeDepsPluginIds = openclawLib.bundledRuntimeDepsPluginIds cfg.bundledPlugins;
   stateDir = cfg.stateDir;
   extensionsDir = openclawLib.mkExtensionsDir stateDir;
@@ -26,12 +30,12 @@
   localPluginsDir = openclawLib.mkLocalPluginsDir stateDir;
   distDir = openclawLib.mkDistDir stateDir;
   bundledPluginsPackage =
-    if enabledBundledPluginIds == []
+    if bundledPluginPackageIds == []
     then null
     else
       pkgs.callPackage ../packages/openclaw-bundled-plugins.nix {
         package = resolvedPackage;
-        pluginIds = enabledBundledPluginIds;
+        pluginIds = bundledPluginPackageIds;
       };
   bundledPluginsRoot =
     if bundledPluginsPackage != null
@@ -158,6 +162,12 @@ in {
       }));
       default = {};
       description = "Declarative bundled plugin definitions keyed by upstream plugin ID.";
+    };
+
+    extraBundledPluginIds = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [];
+      description = "Additional bundled plugin IDs to keep in the filtered bundled-plugin tree without declaring them as enabled plugins in generated config.";
     };
 
     localPlugins = lib.mkOption {
@@ -368,8 +378,14 @@ in {
         cp -r ${bundledPackageDist} "$runtime_stage_tmp"/"$runtime_package_key"/dist
         chmod -R u+w "$runtime_stage_tmp"/"$runtime_package_key"/dist 2>/dev/null || true
         cp ${bundledPackageJson} "$runtime_stage_tmp"/"$runtime_package_key"/package.json
+        mkdir -p "$runtime_stage_tmp"/"$runtime_package_key"/dist/node_modules
+        mkdir -p "$runtime_stage_tmp"/"$runtime_package_key"/dist/extensions/node_modules
         ln -sfn ${resolvedPackage}/lib/openclaw \
           "$runtime_stage_tmp"/"$runtime_package_key"/node_modules/openclaw
+        ln -sfn ${resolvedPackage}/lib/openclaw \
+          "$runtime_stage_tmp"/"$runtime_package_key"/dist/node_modules/openclaw
+        ln -sfn ${resolvedPackage}/lib/openclaw \
+          "$runtime_stage_tmp"/"$runtime_package_key"/dist/extensions/node_modules/openclaw
         cp ${bundledRuntimeDepsPackage}/.openclaw-selected-plugin-ids.json \
           "$runtime_stage_tmp"/.openclaw-selected-plugin-ids.json
         printf '%s\n' "$runtime_package_key" > "$runtime_stage_tmp"/.openclaw-package-key
