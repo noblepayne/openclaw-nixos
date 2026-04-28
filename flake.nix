@@ -18,40 +18,26 @@
     system = "x86_64-linux";
     pkgs = nixpkgs.legacyPackages.${system};
     baseOpenclawLib = import ./nix/lib/default.nix {lib = nixpkgs.lib;};
-    openclawLib =
-      let
-        self =
-          baseOpenclawLib
-          // {
-        mkBundledPluginsPackage =
-          {
-            pkgs,
-            ...
-          }@args:
-          pkgs.callPackage ./nix/packages/openclaw-bundled-plugins.nix (builtins.removeAttrs args [ "pkgs" ]);
-        mkBundledRuntimeDepsPackage =
-          {
-            pkgs,
-            ...
-          }@args:
-          pkgs.callPackage ./nix/packages/openclaw-bundled-runtime-deps.nix (builtins.removeAttrs args [ "pkgs" ]);
-        mkPluginRuntimeDepsFromNpmLock =
-          {
-            pkgs,
-            ...
-          }@args:
-          pkgs.callPackage ./nix/packages/openclaw-plugin-runtime-deps.nix (builtins.removeAttrs args [ "pkgs" ]);
-        mkPluginPackage =
-          {
+    openclawLib = let
+      self =
+        baseOpenclawLib
+        // {
+          mkBundledPluginsPackage = {pkgs, ...} @ args:
+            pkgs.callPackage ./nix/packages/openclaw-bundled-plugins.nix (builtins.removeAttrs args ["pkgs"]);
+          mkBundledRuntimeDepsPackage = {pkgs, ...} @ args:
+            pkgs.callPackage ./nix/packages/openclaw-bundled-runtime-deps.nix (builtins.removeAttrs args ["pkgs"]);
+          mkPluginRuntimeDepsFromNpmLock = {pkgs, ...} @ args:
+            pkgs.callPackage ./nix/packages/openclaw-plugin-runtime-deps.nix (builtins.removeAttrs args ["pkgs"]);
+          mkPluginPackage = {
             pkgs,
             runtimeDeps ? null,
             ...
-          }@args:
-          let
+          } @ args: let
             resolvedRuntimeDepsPackage =
-              if args ? runtimeDepsPackage then
-                args.runtimeDepsPackage
-              else if runtimeDeps != null && runtimeDeps ? npm then
+              if args ? runtimeDepsPackage
+              then args.runtimeDepsPackage
+              else if runtimeDeps != null && runtimeDeps ? npm
+              then
                 self.mkPluginRuntimeDepsFromNpmLock (
                   {
                     inherit pkgs;
@@ -60,17 +46,16 @@
                   }
                   // runtimeDeps.npm
                 )
-              else
-                null;
+              else null;
           in
-          pkgs.callPackage ./nix/packages/openclaw-plugin.nix (
-            (builtins.removeAttrs args [ "pkgs" "runtimeDeps" ])
-            // {
-              runtimeDepsPackage = resolvedRuntimeDepsPackage;
-            }
-          );
-      };
-      in
+            pkgs.callPackage ./nix/packages/openclaw-plugin.nix (
+              (builtins.removeAttrs args ["pkgs" "runtimeDeps"])
+              // {
+                runtimeDepsPackage = resolvedRuntimeDepsPackage;
+              }
+            );
+        };
+    in
       self;
 
     # The pruned lockfile lives in our repo
@@ -88,23 +73,17 @@
     openclaw-bundled-runtime-deps = openclawLib.mkBundledRuntimeDepsPackage {
       inherit pkgs;
       package = openclaw-gateway;
-      pluginIds = [ ];
+      pluginIds = [];
     };
-    mkSystemModule = path: {
-      pkgs,
-      ...
-    }: {
+    mkSystemModule = path: {pkgs, ...}: {
       _module.args.openclawSystemDefaultPackage =
         self.packages.${pkgs.stdenv.hostPlatform.system}.openclaw-gateway;
-      imports = [ path ];
+      imports = [path];
     };
-    mkUserModule = path: {
-      pkgs,
-      ...
-    }: {
+    mkUserModule = path: {pkgs, ...}: {
       _module.args.openclawUserDefaultPackage =
         self.packages.${pkgs.stdenv.hostPlatform.system}.openclaw-gateway;
-      imports = [ path ];
+      imports = [path];
     };
     mkProfileModule = profile: {
       lib,
@@ -162,7 +141,7 @@
       };
       runtimeDepsDrv = final.callPackage ./nix/packages/openclaw-bundled-runtime-deps.nix {
         package = drv;
-        pluginIds = [ ];
+        pluginIds = [];
       };
     in {
       openclaw-gateway = drv;

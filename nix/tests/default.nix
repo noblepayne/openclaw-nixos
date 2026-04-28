@@ -5,8 +5,7 @@
   openclaw-gateway,
   systemServiceModule,
   userServiceModule,
-}:
-let
+}: let
   pkgs = nixpkgs.legacyPackages.${system};
 
   fixtureNoRuntimeDeps = ../../tests/fixtures/plugins/no-runtime-deps;
@@ -32,45 +31,41 @@ let
     };
   };
 
-  selectedPluginIds = [ "memory-core" ];
+  selectedPluginIds = ["memory-core"];
   selectedBundledPlugins = openclawLib.mkBundledPluginsPackage {
     inherit pkgs;
     package = openclaw-gateway;
     pluginIds = selectedPluginIds;
   };
-in
-{
+in {
   vm-system-service = pkgs.testers.runNixOSTest (
-    { ... }:
-    {
+    {...}: {
       name = "openclaw-system-service";
 
-      nodes.machine =
-        { pkgs, ... }:
-        {
-          imports = [ systemServiceModule ];
+      nodes.machine = {pkgs, ...}: {
+        imports = [systemServiceModule];
 
-          system.stateVersion = "26.05";
-          environment.systemPackages = [
-            pkgs.curl
-            pkgs.jq
-          ];
+        system.stateVersion = "26.05";
+        environment.systemPackages = [
+          pkgs.curl
+          pkgs.jq
+        ];
 
-          services.openclaw = {
+        services.openclaw = {
+          enable = true;
+          mutableExtensionsDir = false;
+          port = 18789;
+          bundledPlugins.memory-core = {
             enable = true;
-            mutableExtensionsDir = false;
-            port = 18789;
-            bundledPlugins.memory-core = {
-              enable = true;
-            };
-            localPlugins.fixture-with-runtime-deps.package = vendoredRuntimeDepsPlugin;
-            plugins.slots.memory = "fixture-with-runtime-deps";
-            config.gateway = {
-              mode = "local";
-              auth.token = "AUTH_TOKEN";
-            };
+          };
+          localPlugins.fixture-with-runtime-deps.package = vendoredRuntimeDepsPlugin;
+          plugins.slots.memory = "fixture-with-runtime-deps";
+          config.gateway = {
+            mode = "local";
+            auth.token = "AUTH_TOKEN";
           };
         };
+      };
 
       testScript = ''
         try:
@@ -99,43 +94,40 @@ in
   );
 
   vm-user-service = pkgs.testers.runNixOSTest (
-    { ... }:
-    {
+    {...}: {
       name = "openclaw-user-service";
 
-      nodes.machine =
-        { pkgs, ... }:
-        {
-          imports = [ userServiceModule ];
+      nodes.machine = {pkgs, ...}: {
+        imports = [userServiceModule];
 
-          system.stateVersion = "26.05";
-          environment.systemPackages = [
-            pkgs.curl
-            pkgs.jq
-          ];
+        system.stateVersion = "26.05";
+        environment.systemPackages = [
+          pkgs.curl
+          pkgs.jq
+        ];
 
-          users.users.alice = {
-            isNormalUser = true;
-            home = "/home/alice";
-            group = "users";
-          };
+        users.users.alice = {
+          isNormalUser = true;
+          home = "/home/alice";
+          group = "users";
+        };
 
-          services.openclawUser = {
+        services.openclawUser = {
+          enable = true;
+          user = "alice";
+          mutableExtensionsDir = false;
+          port = 18789;
+          bundledPlugins.memory-core = {
             enable = true;
-            user = "alice";
-            mutableExtensionsDir = false;
-            port = 18789;
-            bundledPlugins.memory-core = {
-              enable = true;
-            };
-            localPlugins.fixture-no-runtime-deps.package = noRuntimeDepsPlugin;
-            plugins.slots.memory = "fixture-no-runtime-deps";
-            config.gateway = {
-              mode = "local";
-              auth.token = "AUTH_TOKEN";
-            };
+          };
+          localPlugins.fixture-no-runtime-deps.package = noRuntimeDepsPlugin;
+          plugins.slots.memory = "fixture-no-runtime-deps";
+          config.gateway = {
+            mode = "local";
+            auth.token = "AUTH_TOKEN";
           };
         };
+      };
 
       testScript = ''
         machine.succeed("loginctl enable-linger alice")

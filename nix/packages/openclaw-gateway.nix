@@ -75,8 +75,7 @@
           if normalizedStagedRuntimeDepsPluginIds == null
           then ""
           else lib.concatStringsSep "," normalizedStagedRuntimeDepsPluginIds;
-        STAGE_BUNDLED_PLUGIN_RUNTIME_DEPS_WRAPPER_MJS =
-          "${../scripts/stage-bundled-plugin-runtime-deps-wrapper.mjs}";
+        STAGE_BUNDLED_PLUGIN_RUNTIME_DEPS_WRAPPER_MJS = "${../scripts/stage-bundled-plugin-runtime-deps-wrapper.mjs}";
       };
     };
 in

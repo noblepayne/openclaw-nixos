@@ -8,12 +8,11 @@
   openclawLib = import ../lib/default.nix {inherit lib;};
   cfg = config.services.openclawUser;
   defaultPackage =
-    if openclawUserDefaultPackage != null then
-      openclawUserDefaultPackage
-    else if pkgs ? openclaw-gateway then
-      pkgs.openclaw-gateway
-    else
-      pkgs.openclaw;
+    if openclawUserDefaultPackage != null
+    then openclawUserDefaultPackage
+    else if pkgs ? openclaw-gateway
+    then pkgs.openclaw-gateway
+    else pkgs.openclaw;
   resolvedPackage = openclawLib.withBundledRuntimeDepsFromPlugins {
     package = cfg.package;
     inherit (cfg) bundledPlugins;
@@ -34,26 +33,23 @@
       || config.users.users.${cfg.user}.uid != null
     );
   resolvedHomeDirectory =
-    if cfg.homeDirectory != null then
-      cfg.homeDirectory
-    else if hasDeclaredUser && config.users.users.${cfg.user}.home != null then
-      config.users.users.${cfg.user}.home
-    else if hasConfiguredUser then
-      "/home/${cfg.user}"
-    else
-      "/var/empty";
+    if cfg.homeDirectory != null
+    then cfg.homeDirectory
+    else if hasDeclaredUser && config.users.users.${cfg.user}.home != null
+    then config.users.users.${cfg.user}.home
+    else if hasConfiguredUser
+    then "/home/${cfg.user}"
+    else "/var/empty";
   resolvedGroup =
-    if cfg.group != null then
-      cfg.group
-    else if hasDeclaredUser && config.users.users.${cfg.user}.group != null then
-      config.users.users.${cfg.user}.group
-    else
-      "users";
+    if cfg.group != null
+    then cfg.group
+    else if hasDeclaredUser && config.users.users.${cfg.user}.group != null
+    then config.users.users.${cfg.user}.group
+    else "users";
   stateDir =
-    if cfg.stateDir != null then
-      cfg.stateDir
-    else
-      "${resolvedHomeDirectory}/.local/share/openclaw";
+    if cfg.stateDir != null
+    then cfg.stateDir
+    else "${resolvedHomeDirectory}/.local/share/openclaw";
   extensionsDir = openclawLib.mkExtensionsDir stateDir;
   bundledRuntimeDepsDir = openclawLib.mkBundledRuntimeDepsDir stateDir;
   localPluginsDir = openclawLib.mkLocalPluginsDir stateDir;
@@ -89,7 +85,8 @@
   cronJobsPath = openclawLib.mkCronJobsPath stateDir;
   managedLocalPluginsManifest = "${localPluginsDir}/.openclaw-nix-managed-plugins";
   pluginConfig = openclawLib.renderPluginsConfig {
-    inherit (cfg)
+    inherit
+      (cfg)
       bundledPlugins
       localPlugins
       plugins
@@ -104,10 +101,9 @@
     extraConfig = pluginConfig;
   };
 
-  hasConfig = cfg.config != { } || cfg.configFile != null || pluginConfig != { };
-  hasCronJobs = cfg.cronJobs != { };
-in
-{
+  hasConfig = cfg.config != {} || cfg.configFile != null || pluginConfig != {};
+  hasCronJobs = cfg.cronJobs != {};
+in {
   options.services.openclawUser = {
     enable = lib.mkEnableOption "OpenClaw gateway user service";
 
@@ -157,7 +153,7 @@ in
 
     config = lib.mkOption {
       type = lib.types.attrsOf lib.types.anything;
-      default = { };
+      default = {};
       description = "OpenClaw configuration as a Nix attrset";
     };
 
@@ -290,12 +286,12 @@ in
           };
           jobs = lib.mkOption {
             type = lib.types.listOf (lib.types.attrsOf lib.types.anything);
-            default = [ ];
+            default = [];
             description = "List of cron job definitions";
           };
         };
       };
-      default = { };
+      default = {};
       description = "Cron job definitions. Written to the user state directory.";
     };
 
@@ -313,36 +309,37 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    assertions = [
-      {
-        assertion = cfg.user != null;
-        message = "services.openclawUser.user must be set when using the userService module.";
-      }
-      {
-        assertion = hasDeclaredUser;
-        message = "services.openclawUser.user must reference a user declared in users.users so the module can resolve home and linger settings.";
-      }
-    ] ++ lib.mapAttrsToList (
-      pluginId: pluginCfg:
-      let
-        pluginMeta = pluginCfg.package.passthru.openclaw or { };
-      in
-      {
-        assertion = (pluginMeta.pluginId or null) == pluginId;
-        message = "services.openclawUser.localPlugins.${pluginId}.package must expose passthru.openclaw.pluginId = \"${pluginId}\".";
-      }
-    ) enabledLocalPlugins ++ lib.mapAttrsToList (
-      pluginId: pluginCfg:
-      let
-        pluginMeta = pluginCfg.package.passthru.openclaw or { };
-      in
-      {
-        assertion =
-          !(pluginMeta.requiresRuntimeDeps or false)
-          || (pluginMeta.hasVendoredRuntimeDeps or false);
-        message = "services.openclawUser.localPlugins.${pluginId}.package declares runtime deps but does not vendor them. Build it with openclaw-nixos.lib.mkPluginRuntimeDepsFromNpmLock or mkPluginPackage runtimeDeps.npm.";
-      }
-    ) enabledLocalPlugins;
+    assertions =
+      [
+        {
+          assertion = cfg.user != null;
+          message = "services.openclawUser.user must be set when using the userService module.";
+        }
+        {
+          assertion = hasDeclaredUser;
+          message = "services.openclawUser.user must reference a user declared in users.users so the module can resolve home and linger settings.";
+        }
+      ]
+      ++ lib.mapAttrsToList (
+        pluginId: pluginCfg: let
+          pluginMeta = pluginCfg.package.passthru.openclaw or {};
+        in {
+          assertion = (pluginMeta.pluginId or null) == pluginId;
+          message = "services.openclawUser.localPlugins.${pluginId}.package must expose passthru.openclaw.pluginId = \"${pluginId}\".";
+        }
+      )
+      enabledLocalPlugins
+      ++ lib.mapAttrsToList (
+        pluginId: pluginCfg: let
+          pluginMeta = pluginCfg.package.passthru.openclaw or {};
+        in {
+          assertion =
+            !(pluginMeta.requiresRuntimeDeps or false)
+            || (pluginMeta.hasVendoredRuntimeDeps or false);
+          message = "services.openclawUser.localPlugins.${pluginId}.package declares runtime deps but does not vendor them. Build it with openclaw-nixos.lib.mkPluginRuntimeDepsFromNpmLock or mkPluginPackage runtimeDeps.npm.";
+        }
+      )
+      enabledLocalPlugins;
 
     users.users.${cfg.user}.linger = lib.mkDefault cfg.enableLinger;
 
@@ -422,9 +419,10 @@ in
         LOCAL_PLUGINS_EOF
         mv ${managedLocalPluginsManifest}.tmp ${managedLocalPluginsManifest}
         ${lib.concatStringsSep "\n" (lib.mapAttrsToList (pluginId: pluginCfg: ''
-          mkdir -p ${openclawLib.mkLocalPluginInstallPath stateDir pluginId}
-          cp -r ${pluginCfg.package}/. ${openclawLib.mkLocalPluginInstallPath stateDir pluginId}/
-        '') enabledLocalPlugins)}
+            mkdir -p ${openclawLib.mkLocalPluginInstallPath stateDir pluginId}
+            cp -r ${pluginCfg.package}/. ${openclawLib.mkLocalPluginInstallPath stateDir pluginId}/
+          '')
+          enabledLocalPlugins)}
       '';
 
       setupConfig = lib.optionalString hasConfig ''
@@ -454,12 +452,12 @@ in
         "chown -R ${cfg.user}:${resolvedGroup} ${stateDir}"
       ];
     in
-      lib.stringAfter [ "users" ] (lib.concatStringsSep "\n\n" steps);
+      lib.stringAfter ["users"] (lib.concatStringsSep "\n\n" steps);
 
     systemd.user.services.${cfg.unitName} = {
       description = "OpenClaw AI Gateway";
-      wantedBy = [ "default.target" ];
-      after = [ "network.target" ];
+      wantedBy = ["default.target"];
+      after = ["network.target"];
       unitConfig.ConditionUser = cfg.user;
       serviceConfig = {
         Type = "simple";
