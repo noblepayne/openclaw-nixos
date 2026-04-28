@@ -2,14 +2,14 @@
   config,
   pkgs,
   lib,
-  openclawSystemDefaultPackage ? null,
+  openclawUserDefaultPackage ? null,
   ...
 }: let
   openclawLib = import ../lib/default.nix {inherit lib;};
-  cfg = config.services.openclaw;
+  cfg = config.services.openclawUser;
   defaultPackage =
-    if openclawSystemDefaultPackage != null then
-      openclawSystemDefaultPackage
+    if openclawUserDefaultPackage != null then
+      openclawUserDefaultPackage
     else if pkgs ? openclaw-gateway then
       pkgs.openclaw-gateway
     else
@@ -24,7 +24,36 @@
     extraPluginIds = cfg.extraBundledPluginIds;
   };
   bundledRuntimeDepsPluginIds = openclawLib.bundledRuntimeDepsPluginIds cfg.bundledPlugins;
-  stateDir = cfg.stateDir;
+  hasConfiguredUser = cfg.user != null;
+  hasDeclaredUser =
+    hasConfiguredUser
+    && builtins.hasAttr cfg.user config.users.users
+    && (
+      config.users.users.${cfg.user}.isNormalUser
+      || config.users.users.${cfg.user}.isSystemUser
+      || config.users.users.${cfg.user}.uid != null
+    );
+  resolvedHomeDirectory =
+    if cfg.homeDirectory != null then
+      cfg.homeDirectory
+    else if hasDeclaredUser && config.users.users.${cfg.user}.home != null then
+      config.users.users.${cfg.user}.home
+    else if hasConfiguredUser then
+      "/home/${cfg.user}"
+    else
+      "/var/empty";
+  resolvedGroup =
+    if cfg.group != null then
+      cfg.group
+    else if hasDeclaredUser && config.users.users.${cfg.user}.group != null then
+      config.users.users.${cfg.user}.group
+    else
+      "users";
+  stateDir =
+    if cfg.stateDir != null then
+      cfg.stateDir
+    else
+      "${resolvedHomeDirectory}/.local/share/openclaw";
   extensionsDir = openclawLib.mkExtensionsDir stateDir;
   bundledRuntimeDepsDir = openclawLib.mkBundledRuntimeDepsDir stateDir;
   localPluginsDir = openclawLib.mkLocalPluginsDir stateDir;
@@ -75,17 +104,43 @@
     extraConfig = pluginConfig;
   };
 
-  hasConfig = cfg.config != {} || cfg.configFile != null || pluginConfig != {};
-  hasCronJobs = cfg.cronJobs != {};
-in {
-  options.services.openclaw = {
-    enable = lib.mkEnableOption "OpenClaw gateway";
+  hasConfig = cfg.config != { } || cfg.configFile != null || pluginConfig != { };
+  hasCronJobs = cfg.cronJobs != { };
+in
+{
+  options.services.openclawUser = {
+    enable = lib.mkEnableOption "OpenClaw gateway user service";
 
     package = lib.mkOption {
       type = lib.types.package;
       default = defaultPackage;
       defaultText = lib.literalExpression "openclaw-nixos.packages.<system>.openclaw-gateway";
       description = "OpenClaw gateway package to use";
+    };
+
+    user = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "User account that owns the OpenClaw home/state for the user service.";
+    };
+
+    group = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Group for state file ownership. Defaults to the configured user's primary group or users.";
+    };
+
+    homeDirectory = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Home directory for the OpenClaw user service. Defaults to the configured user's home.";
+    };
+
+    stateDir = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      defaultText = lib.literalExpression ''"/home/<user>/.local/share/openclaw"'';
+      description = "State directory for the OpenClaw user service.";
     };
 
     port = lib.mkOption {
@@ -102,12 +157,8 @@ in {
 
     config = lib.mkOption {
       type = lib.types.attrsOf lib.types.anything;
-      default = {};
+      default = { };
       description = "OpenClaw configuration as a Nix attrset";
-      example = {
-        channels.telegram.token = "BOT_TOKEN";
-        gateway.auth.token = "AUTH_TOKEN";
-      };
     };
 
     plugins = lib.mkOption {
@@ -219,37 +270,12 @@ in {
       description = "Path to an openclaw.json config file. Merged with config attrset if both set (config takes priority).";
     };
 
-    openFirewall = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
-      description = "Open the firewall for the gateway port";
-    };
-
-    user = lib.mkOption {
-      type = lib.types.str;
-      default = "openclaw";
-      description = "User to run OpenClaw as";
-    };
-
-    group = lib.mkOption {
-      type = lib.types.str;
-      default = "openclaw";
-      description = "Group to run OpenClaw as";
-    };
-
-    stateDir = lib.mkOption {
-      type = lib.types.str;
-      default = "/var/lib/openclaw";
-      description = "State directory for OpenClaw runtime files and generated config.";
-    };
-
     mutableExtensionsDir = lib.mkOption {
       type = lib.types.bool;
       default = true;
       description = ''
-        Copy extension files from the read-only Nix store into a mutable state directory.
+        Copy extension files from the read-only Nix store into a mutable user state directory.
         Required for upstream versions that enforce plugin path boundary validation.
-        Disable only if your OpenClaw version has the upstream fix merged.
       '';
     };
 
@@ -264,27 +290,37 @@ in {
           };
           jobs = lib.mkOption {
             type = lib.types.listOf (lib.types.attrsOf lib.types.anything);
-            default = [];
+            default = [ ];
             description = "List of cron job definitions";
           };
         };
       };
-      default = {};
-      description = "Cron job definitions. Written to {stateDir}/cron/jobs.json";
+      default = { };
+      description = "Cron job definitions. Written to the user state directory.";
+    };
+
+    unitName = lib.mkOption {
+      type = lib.types.str;
+      default = "openclaw";
+      description = "systemd user unit name for the OpenClaw gateway.";
+    };
+
+    enableLinger = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Enable linger for the configured user so the gateway can run without an active login session.";
     };
   };
 
   config = lib.mkIf cfg.enable {
     assertions = [
       {
-        assertion =
-          !(stateDir == "/home"
-            || lib.hasPrefix "/home/" stateDir
-            || stateDir == "/root"
-            || lib.hasPrefix "/root/" stateDir
-            || stateDir == "/run/user"
-            || lib.hasPrefix "/run/user/" stateDir);
-        message = "services.openclaw.stateDir must stay outside /home, /root, and /run/user while systemService keeps ProtectHome=true. Use nixosModules.userService for home-scoped state.";
+        assertion = cfg.user != null;
+        message = "services.openclawUser.user must be set when using the userService module.";
+      }
+      {
+        assertion = hasDeclaredUser;
+        message = "services.openclawUser.user must reference a user declared in users.users so the module can resolve home and linger settings.";
       }
     ] ++ lib.mapAttrsToList (
       pluginId: pluginCfg:
@@ -293,7 +329,7 @@ in {
       in
       {
         assertion = (pluginMeta.pluginId or null) == pluginId;
-        message = "services.openclaw.localPlugins.${pluginId}.package must expose passthru.openclaw.pluginId = \"${pluginId}\".";
+        message = "services.openclawUser.localPlugins.${pluginId}.package must expose passthru.openclaw.pluginId = \"${pluginId}\".";
       }
     ) enabledLocalPlugins ++ lib.mapAttrsToList (
       pluginId: pluginCfg:
@@ -304,36 +340,13 @@ in {
         assertion =
           !(pluginMeta.requiresRuntimeDeps or false)
           || (pluginMeta.hasVendoredRuntimeDeps or false);
-        message = "services.openclaw.localPlugins.${pluginId}.package declares runtime deps but does not vendor them. Build it with openclaw-nixos.lib.mkPluginRuntimeDepsFromNpmLock or mkPluginPackage runtimeDeps.npm.";
+        message = "services.openclawUser.localPlugins.${pluginId}.package declares runtime deps but does not vendor them. Build it with openclaw-nixos.lib.mkPluginRuntimeDepsFromNpmLock or mkPluginPackage runtimeDeps.npm.";
       }
     ) enabledLocalPlugins;
 
-    users.users."${cfg.user}" = {
-      isSystemUser = true;
-      group = cfg.group;
-      home = stateDir;
-      createHome = true;
-      shell = pkgs.runtimeShell;
-    };
+    users.users.${cfg.user}.linger = lib.mkDefault cfg.enableLinger;
 
-    users.groups."${cfg.group}" = {};
-
-    networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [cfg.port];
-
-    # Runs as root to set up mutable state from the Nix store.
-    # This is a separate oneshot service (runs as root, no sandboxing)
-    # that the main gateway service depends on.
-    systemd.services.openclaw-setup = {
-      description = "OpenClaw state setup";
-      serviceConfig = {
-        Type = "oneshot";
-        User = "root";
-        Group = "root";
-      };
-      wantedBy = ["openclaw.service"];
-      before = ["openclaw.service"];
-
-      script = let
+    system.activationScripts."openclaw-user-setup-${cfg.user}" = let
       setupExtensions = lib.optionalString cfg.mutableExtensionsDir ''
         rm -rf ${distDir}
         mkdir -p ${distDir}
@@ -414,45 +427,53 @@ in {
         '') enabledLocalPlugins)}
       '';
 
-        setupConfig = lib.optionalString hasConfig ''
-          mkdir -p $(dirname ${configPath})
-          cat > ${configPath}.tmp << 'CONFIG_EOF'
-          ${builtins.toJSON mergedConfig}
-          CONFIG_EOF
-          mv ${configPath}.tmp ${configPath}
-        '';
+      setupConfig = lib.optionalString hasConfig ''
+        mkdir -p $(dirname ${configPath})
+        cat > ${configPath}.tmp << 'CONFIG_EOF'
+        ${builtins.toJSON mergedConfig}
+        CONFIG_EOF
+        mv ${configPath}.tmp ${configPath}
+      '';
 
-        setupCron = lib.optionalString hasCronJobs ''
-          mkdir -p ${cronDir}
-          cat > ${cronJobsPath}.tmp << 'CRON_EOF'
-          ${builtins.toJSON cfg.cronJobs}
-          CRON_EOF
-          mv ${cronJobsPath}.tmp ${cronJobsPath}
-        '';
+      setupCron = lib.optionalString hasCronJobs ''
+        mkdir -p ${cronDir}
+        cat > ${cronJobsPath}.tmp << 'CRON_EOF'
+        ${builtins.toJSON cfg.cronJobs}
+        CRON_EOF
+        mv ${cronJobsPath}.tmp ${cronJobsPath}
+      '';
 
-        steps = lib.filter (s: s != "") [
+      steps = lib.filter (s: s != "") [
+        "install -d -m 0755 -o ${cfg.user} -g ${resolvedGroup} ${resolvedHomeDirectory}"
+        "install -d -m 0755 -o ${cfg.user} -g ${resolvedGroup} ${stateDir}"
         setupConfig
         setupCron
         setupExtensions
         setupBundledRuntimeDeps
         setupLocalPlugins
-        "chown -R ${cfg.user}:${cfg.group} ${stateDir}"
+        "chown -R ${cfg.user}:${resolvedGroup} ${stateDir}"
       ];
-      in
-        lib.concatStringsSep "\n\n" steps;
-    };
+    in
+      lib.stringAfter [ "users" ] (lib.concatStringsSep "\n\n" steps);
 
-    systemd.services.openclaw = {
-      description = lib.mkDefault "OpenClaw AI Gateway";
-      wantedBy = lib.mkDefault ["multi-user.target"];
-      after = ["network.target"];
-
+    systemd.user.services.${cfg.unitName} = {
+      description = "OpenClaw AI Gateway";
+      wantedBy = [ "default.target" ];
+      after = [ "network.target" ];
+      unitConfig.ConditionUser = cfg.user;
+      serviceConfig = {
+        Type = "simple";
+        ExecStart = "${resolvedPackage}/bin/openclaw gateway";
+        WorkingDirectory = stateDir;
+        Restart = "always";
+        RestartSec = 5;
+      };
       environment =
         {
           PORT = toString cfg.port;
           BIND_ADDRESS = cfg.bind;
           OPENCLAW_NIX_MODE = "1";
-          HOME = stateDir;
+          HOME = resolvedHomeDirectory;
           OPENCLAW_CONFIG_PATH = configPath;
         }
         // lib.optionalAttrs cfg.mutableExtensionsDir {
@@ -467,23 +488,6 @@ in {
         // lib.optionalAttrs hasConfig {
           CONFIG_HASH = builtins.hashString "sha256" (builtins.toJSON mergedConfig);
         };
-
-      serviceConfig = {
-        Type = lib.mkDefault "simple";
-        User = cfg.user;
-        Group = cfg.group;
-        WorkingDirectory = lib.mkDefault stateDir;
-        ExecStart = lib.mkDefault "${resolvedPackage}/bin/openclaw gateway";
-        Restart = lib.mkDefault "always";
-        RestartSec = lib.mkDefault 5;
-
-        # Hardening
-        NoNewPrivileges = lib.mkDefault true;
-        ProtectSystem = lib.mkDefault "strict";
-        ProtectHome = lib.mkDefault true;
-        PrivateTmp = lib.mkDefault true;
-        ReadWritePaths = [stateDir];
-      };
     };
   };
 }

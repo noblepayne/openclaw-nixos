@@ -93,7 +93,7 @@ log_step "build: write-cli-compat" node --import tsx scripts/write-cli-compat.ts
 
 # Post-build steps (after tsdown compilation)
 log_step "build: postinstall-bundled-plugins" node scripts/postinstall-bundled-plugins.mjs
-log_step "build: stage-bundled-plugin-runtime-deps" node scripts/stage-bundled-plugin-runtime-deps.mjs
+log_step "build: stage-bundled-plugin-runtime-deps" node "$STAGE_BUNDLED_PLUGIN_RUNTIME_DEPS_WRAPPER_MJS"
 
 log_step "ui:build" pnpm ui:build
 

@@ -12,7 +12,7 @@ Add this flake to your system configuration:
     nixosConfigurations.my-agent = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
       modules = [
-        openclaw-nixos.nixosModules.default
+        openclaw-nixos.nixosModules.systemService
         {
           services.openclaw = {
             enable = true;
@@ -31,6 +31,68 @@ Add this flake to your system configuration:
 ```
 
 ## Configuration Options
+
+The two service adapters intentionally use different option roots.
+
+- `openclaw-nixos.nixosModules.systemService`
+  - runs OpenClaw as a system service
+  - config root: `services.openclaw`
+  - creates the service user/group automatically
+  - defaults `stateDir` to `/var/lib/openclaw`
+- `openclaw-nixos.nixosModules.userService`
+  - runs OpenClaw as a `systemd.user` service for a configured user
+  - config root: `services.openclawUser`
+  - defaults `stateDir` under the user's home directory
+  - expects the host to manage the target user account via `users.users`
+- `openclaw-nixos.nixosModules.profileChat`
+- `openclaw-nixos.nixosModules.profileBrowserAutomation`
+- `openclaw-nixos.nixosModules.profileAcp`
+
+Both adapters consume an OpenClaw package, but the preferred interface for bundled plugins is the declarative module surface:
+
+```nix
+services.openclaw.bundledPlugins.telegram = {
+  enable = true;
+  stageRuntimeDeps = true;
+  config.botToken = "BOT_TOKEN";
+};
+```
+
+When you enable bundled plugins this way, the module does three things:
+
+- merges the plugin ID into `plugins.allow`
+- renders `plugins.entries.<id>` from `config` and `entry`
+- builds a filtered bundled-plugin artifact containing only the enabled bundled plugin IDs
+
+If `stageRuntimeDeps = true`, the module also prepares a build-time bundled runtime-deps closure for that plugin and assembles a live stage root under `${stateDir}/plugin-runtime-deps` before startup.
+
+Low-level helpers still exist for downstream composition:
+
+```nix
+openclaw-nixos.lib.withBundledRuntimeDeps {
+  package = openclaw-nixos.packages.${pkgs.system}.openclaw-gateway;
+  pluginIds = [ "telegram" ];
+}
+```
+
+and:
+
+```nix
+openclaw-nixos.lib.mkBundledPluginsPackage {
+  inherit pkgs;
+  package = openclaw-nixos.packages.${pkgs.system}.openclaw-gateway;
+  pluginIds = [ "telegram" ];
+}
+```
+
+For shared baselines, upstream also exposes reusable plugin profiles:
+
+- `openclaw-nixos.lib.pluginProfiles.chat`
+- `openclaw-nixos.lib.pluginProfiles.browserAutomation`
+- `openclaw-nixos.lib.pluginProfiles.acp`
+- `openclaw-nixos.lib.mergePluginProfiles`
+
+Those can be used either through `nixosModules.profile*` imports or by composing the returned attrsets directly before assigning them to `services.openclaw` or `services.openclawUser`.
 
 ### `services.openclaw.enable`
 Type: `bool`, Default: `false`
@@ -55,7 +117,7 @@ Address to bind to. Use `"0.0.0.0"` for all interfaces.
 ### `services.openclaw.config`
 Type: `attrs`, Default: `{}`
 
-OpenClaw configuration as a Nix attrset. Merged with `configFile` if both are set (attrset wins on conflicts). Written to `/var/lib/openclaw/openclaw.json` by the setup service.
+OpenClaw configuration as a Nix attrset. Merged with generated plugin config and `configFile` if both are set (attrset wins on conflicts). Written to `/var/lib/openclaw/openclaw.json` by the setup service.
 
 ```nix
 services.openclaw.config = {
@@ -67,6 +129,167 @@ services.openclaw.config = {
   providers.openai.apiKey = "sk-...";
   memory.enabled = true;
 };
+```
+
+### `services.openclaw.plugins`
+Type: `submodule`, Default: `{}`
+
+Declarative plugin structure merged under top-level `plugins`.
+
+- `allow`: plugin IDs appended to `plugins.allow`
+- `slots`: slot assignments merged into `plugins.slots`
+- `entries`: entry definitions merged into `plugins.entries`
+- `installs`: install metadata merged into `plugins.installs`
+
+```nix
+services.openclaw.plugins = {
+  slots.memory = "memory-cognee";
+  entries.memory-cognee = {
+    enabled = true;
+    config.baseUrl = "http://127.0.0.1:8001";
+  };
+};
+```
+
+### `services.openclaw.bundledPlugins`
+Type: `attrsOf submodule`, Default: `{}`
+
+Declarative bundled plugin definitions keyed by upstream plugin ID.
+
+- `enable`: adds the plugin ID to `plugins.allow`
+- `config`: merged into `plugins.entries.<id>.config`
+- `entry`: extra fields merged into `plugins.entries.<id>`
+- `stageRuntimeDeps`: wraps the package and prepares an external stage tree so this bundled plugin's runtime deps are available without runtime installs
+
+```nix
+services.openclaw.bundledPlugins.telegram = {
+  enable = true;
+  stageRuntimeDeps = true;
+  config.botToken = "BOT_TOKEN";
+};
+```
+
+When `stageRuntimeDeps = true`, the module automatically wraps the configured package so that bundled plugin runtime deps are prepared during the build, copied into a live stage root during setup, and exposed to the service through `OPENCLAW_PLUGIN_STAGE_DIR`.
+
+### `services.openclaw.extraBundledPluginIds`
+Type: `listOf str`, Default: `[]`
+
+Additional bundled plugin IDs to keep in the filtered bundled-plugin tree without declaring them as enabled plugins in generated config. This is useful for support surfaces such as `speech-core`.
+
+### Shared plugin profiles
+
+The upstream flake also exposes reusable plugin baselines that downstreams can import or merge:
+
+- `openclaw-nixos.lib.pluginProfiles.chat`
+- `openclaw-nixos.lib.pluginProfiles.browserAutomation`
+- `openclaw-nixos.lib.pluginProfiles.acp`
+- `openclaw-nixos.lib.mergePluginProfiles`
+
+These profiles are intentionally generic. They set shared bundled plugin defaults, but they do not encode host-specific local plugins, secrets, or policy.
+
+Example using module imports:
+
+```nix
+{
+  imports = [
+    openclaw-nixos.nixosModules.systemService
+    openclaw-nixos.nixosModules.profileChat
+    openclaw-nixos.nixosModules.profileBrowserAutomation
+  ];
+
+  services.openclaw = {
+    enable = true;
+    bundledPlugins.discord.enable = lib.mkForce false;
+  };
+}
+```
+
+Example using plain attrset composition:
+
+```nix
+let
+  sharedProfile =
+    openclaw-nixos.lib.mergePluginProfiles [
+      openclaw-nixos.lib.pluginProfiles.chat
+      openclaw-nixos.lib.pluginProfiles.acp
+    ];
+in {
+  services.openclaw =
+    sharedProfile
+    // {
+      enable = true;
+      localPlugins.my-memory.package = myMemoryPlugin;
+      plugins.slots.memory = "my-memory";
+    };
+}
+```
+
+### `services.openclaw.localPlugins`
+Type: `attrsOf submodule`, Default: `{}`
+
+Declarative local packaged plugins keyed by plugin ID.
+
+- `package`: packaged local plugin tree, typically built via `openclaw-nixos.lib.mkPluginPackage`
+- `allow`: add the plugin ID to `plugins.allow` automatically
+- `config`: merged into `plugins.entries.<id>.config`
+- `entry`: extra fields merged into `plugins.entries.<id>`
+- `install`: extra fields merged into `plugins.installs.<id>`
+- `version`: rendered into `plugins.installs.<id>.version` when set, otherwise derived from the package version when available
+
+Enabled local plugins are copied into a module-managed `${stateDir}/extensions/<pluginId>` tree and matched with generated `plugins.installs.<pluginId>` config.
+
+If a local plugin declares runtime `dependencies`, the package must already vendor them. The module asserts this via `package.passthru.openclaw.requiresRuntimeDeps` and `hasVendoredRuntimeDeps`.
+
+```nix
+let
+  memoryCognee =
+    openclaw-nixos.lib.mkPluginPackage {
+      inherit pkgs;
+      pluginId = "memory-cognee";
+      version = "2026.2.4";
+      src = ./openclaw-plugins/memory-cognee;
+    };
+in {
+  services.openclaw.localPlugins.memory-cognee = {
+    package = memoryCognee;
+    config.baseUrl = "http://127.0.0.1:8001";
+  };
+
+  services.openclaw.plugins.slots.memory = "memory-cognee";
+}
+```
+
+To vendor runtime deps directly in the packaged plugin:
+
+```nix
+openclaw-nixos.lib.mkPluginPackage {
+  inherit pkgs;
+  pluginId = "memory-cognee";
+  src = ./openclaw-plugins/memory-cognee;
+  runtimeDeps.npm = {
+    npmDepsHash = "sha256-...";
+  };
+}
+```
+
+To split dependency vendoring from plugin assembly:
+
+```nix
+let
+  runtimeDeps =
+    openclaw-nixos.lib.mkPluginRuntimeDepsFromNpmLock {
+      inherit pkgs;
+      pluginId = "memory-cognee";
+      src = ./openclaw-plugins/memory-cognee;
+      npmDepsHash = "sha256-...";
+    };
+in
+openclaw-nixos.lib.mkPluginPackage {
+  inherit pkgs;
+  pluginId = "memory-cognee";
+  src = ./openclaw-plugins/memory-cognee;
+  runtimeDepsPackage = runtimeDeps;
+}
 ```
 
 ### `services.openclaw.configFile`
@@ -95,11 +318,11 @@ services.openclaw.cronJobs = {
 ### `services.openclaw.mutableExtensionsDir`
 Type: `bool`, Default: `true`
 
-When enabled, copies bundled extensions from the read-only Nix store to `/var/lib/openclaw/dist/` and sets `OPENCLAW_BUNDLED_PLUGINS_DIR` to point there.
+When enabled, the adapter copies the packaged `dist/` tree into writable state and replaces `dist/extensions` with the filtered bundled plugin set there.
 
-This is **required** for upstream OpenClaw versions that enforce plugin path boundary validation, which rejects Nix store paths. Handled by the `openclaw-setup` oneshot service that runs before each gateway start.
+When disabled, the service points `OPENCLAW_BUNDLED_PLUGINS_DIR` directly at the filtered bundled-plugin artifact in the Nix store.
 
-Disable only after the upstream fix (PR #42900) is merged and released.
+This is primarily a compatibility switch for hosts that need a writable bundled-plugin tree. The filtered bundled-plugin model works in both modes.
 
 ### `services.openclaw.openFirewall`
 Type: `bool`, Default: `false`
@@ -107,14 +330,40 @@ Type: `bool`, Default: `false`
 Open the firewall for the configured port.
 
 ### `services.openclaw.user`
-Type: `string`, Default: `"openclaw"`
+For `systemService`: Type `string`, Default: `"openclaw"`
 
 System user to run the service as. Created automatically with `${pkgs.runtimeShell}` (bash on most systems) so that spawned exec sessions and REPL processes work correctly.
 
+For `userService`: use `services.openclawUser.user`, which must point at a user declared in `users.users`.
+
 ### `services.openclaw.group`
-Type: `string`, Default: `"openclaw"`
+For `systemService`: Type `string`, Default: `"openclaw"`
 
 System group for the service user.
+
+For `userService`: use `services.openclawUser.group`, which defaults to the configured user's primary group when available, otherwise `users`.
+
+### `services.openclaw.stateDir`
+Type: `string`, Default: `"/var/lib/openclaw"` for `systemService`
+
+Base state directory used for the rendered config, mutable extension workaround, and cron job file.
+
+### `services.openclaw.homeDirectory`
+Only used by `userService` as `services.openclawUser.homeDirectory`. Defaults to the configured user home when available.
+
+Override the target home directory used for the user-service adapter.
+
+### `services.openclaw.unitName`
+Only used by `userService` as `services.openclawUser.unitName`, Default: `"openclaw"`
+
+The `systemd.user` unit name to install for the gateway.
+
+### `services.openclawUser.enableLinger`
+Type: `bool`, Default: `true`
+
+Only used by `userService`. When enabled, the module sets `users.users.<name>.linger = true` so the user manager can keep the gateway alive without an active login session.
+
+`userService` exposes the same `plugins`, `bundledPlugins`, and `localPlugins` options under `services.openclawUser`.
 
 ## Services Created
 
@@ -131,6 +380,9 @@ A oneshot service that runs as root before the gateway starts. Handles:
 
 On NixOS rebuild: the setup service re-runs because the unit file changes (new store paths). On manual service restart: the mutable extension directory is still valid — no re-copy needed.
 
+### `systemd.user` service (`userService` only)
+The `userService` module installs `systemd.user.services.<unitName>` plus a root-owned activation script that prepares the selected user's state directory before login. The unit is gated with `ConditionUser=<configured user>` and enables linger by default so a headless host can keep the user manager alive.
+
 ## Handling Secrets
 
 Sensitive credentials should **not** go in the Nix `config` attrset (world-readable in the Nix store). Use one of these approaches:
@@ -138,6 +390,29 @@ Sensitive credentials should **not** go in the Nix `config` attrset (world-reada
 1. **`EnvironmentFile`**: Set secrets in a file on the host (e.g. `/var/lib/openclaw/credentials/openclaw.env`) and reference via `systemd.services.openclaw.serviceConfig.EnvironmentFile`.
 2. **`configFile`**: Point to a JSON file with restricted permissions.
 3. **Both**: The module merges `configFile` (base) + `config` attrset (overlay), letting you keep structure in Nix and secrets in a private file.
+
+## Example: user-service consumer
+
+```nix
+{
+  users.users.chris = {
+    isNormalUser = true;
+    extraGroups = [ "wheel" ];
+  };
+
+  imports = [ openclaw-nixos.nixosModules.userService ];
+
+  services.openclawUser = {
+    enable = true;
+    user = "chris";
+    port = 3000;
+    config = {
+      gateway.auth.token = "AUTH_TOKEN";
+      memory.enabled = true;
+    };
+  };
+}
+```
 
 ## Example: full server setup
 

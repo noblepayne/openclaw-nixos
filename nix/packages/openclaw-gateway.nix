@@ -18,7 +18,13 @@
   openclawSrc,
   prunedLockfile,
   pnpmDepsHash,
+  stagedRuntimeDepsPluginIds ? [],
 }: let
+  normalizedStagedRuntimeDepsPluginIds =
+    if stagedRuntimeDepsPluginIds == null
+    then null
+    else lib.sort builtins.lessThan (lib.unique stagedRuntimeDepsPluginIds);
+
   # OpenClaw source with our pruned lockfile substituted in.
   # This ensures fetchPnpmDeps reads the pruned lockfile (1,157 packages)
   # instead of the upstream one (1,356 packages with win32/darwin/android/wasm).
@@ -61,6 +67,16 @@
         NODE_BIN = "${nodejs_22}/bin/node";
         PATCH_CLIPBOARD_SH = "${../scripts/patch-clipboard.sh}";
         PATCH_CLIPBOARD_WRAPPER = "${../scripts/clipboard-wrapper.cjs}";
+        OPENCLAW_NIX_STAGE_RUNTIME_DEPS_STRATEGY =
+          if normalizedStagedRuntimeDepsPluginIds == null
+          then "preserve"
+          else "explicit";
+        OPENCLAW_NIX_STAGE_RUNTIME_DEPS_PLUGIN_IDS =
+          if normalizedStagedRuntimeDepsPluginIds == null
+          then ""
+          else lib.concatStringsSep "," normalizedStagedRuntimeDepsPluginIds;
+        STAGE_BUNDLED_PLUGIN_RUNTIME_DEPS_WRAPPER_MJS =
+          "${../scripts/stage-bundled-plugin-runtime-deps-wrapper.mjs}";
       };
     };
 in
