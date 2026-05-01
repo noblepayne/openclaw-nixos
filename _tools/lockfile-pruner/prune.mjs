@@ -114,8 +114,11 @@ if (lockfile.packages) {
       for (const depName of Object.keys(pkg[depType])) {
         const ver = pkg[depType][depName];
         const baseVer = typeof ver === "string" ? ver.split("(")[0] : ver;
-        const prefix = `${depName}@${baseVer}`;
-        if (strippedPrefixes.has(prefix)) {
+        const namedPrefix = `${depName}@${baseVer}`;
+        // pnpm can encode aliased optional dependencies as:
+        //   alias-name: real-package-name@version
+        // In that case the value itself is the stripped package key prefix.
+        if (strippedPrefixes.has(namedPrefix) || strippedPrefixes.has(baseVer)) {
           if (verbose)
             console.error(`    [${key}] ${depType}.${depName}@${baseVer}`);
           delete pkg[depType][depName];

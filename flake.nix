@@ -5,7 +5,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     openclaw = {
-      url = "github:openclaw/openclaw/v2026.4.22";
+      url = "github:openclaw/openclaw/v2026.4.29";
       flake = false;
     };
   };
@@ -64,7 +64,7 @@
     # pnpmDepsHash must be updated when the pruned lockfile changes.
     # Run: nix build .#openclaw-gateway 2>&1 | grep 'got:' to get the new hash
     # Or: scripts/update-pin.sh
-    pnpmDepsHash = "sha256-bfZ5Rp26bHp9J+NClI+HtSSnPRojO8qUcJk0C8AqcwI=";
+    pnpmDepsHash = "sha256-KzK0JF4UKSH63Z1owoxwC1u5Trj2Vk0TpEqWB4Jk8fY=";
 
     openclaw-gateway = pkgs.callPackage ./nix/packages/openclaw-gateway.nix {
       inherit prunedLockfile pnpmDepsHash;

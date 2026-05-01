@@ -27,7 +27,7 @@
   pnpmPlatform = stdenv.hostPlatform.node.platform;
   pnpmArch = stdenv.hostPlatform.node.arch;
 
-  version = "2026.4.2";
+  version = "2026.4.29";
 
   nodeAddonApi = fetchurl {
     url = "https://registry.npmjs.org/node-addon-api/-/node-addon-api-8.5.0.tgz";
