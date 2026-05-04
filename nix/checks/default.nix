@@ -386,7 +386,8 @@ in ({
     '';
 
     bundled-runtime-deps-selected-build = pkgs.runCommand "openclaw-bundled-runtime-deps-selected-check" {} ''
-      test -d ${selectedBundledGateway}/lib/openclaw/dist/extensions/telegram/node_modules
+      test -d ${selectedBundledGateway}/lib/openclaw/dist-runtime/extensions/telegram
+      test ! -e ${selectedBundledGateway}/lib/openclaw/dist/extensions/telegram/node_modules
       touch "$out"
     '';
 
