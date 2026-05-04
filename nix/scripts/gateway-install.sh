@@ -21,6 +21,9 @@ mkdir -p "$out/lib/openclaw" "$out/bin"
 
 # Build dir is ephemeral in Nix; moving avoids an expensive deep copy of node_modules.
 log_step "move build outputs" mv dist node_modules package.json "$out/lib/openclaw/"
+if [ -d dist-runtime ]; then
+  log_step "move dist-runtime" mv dist-runtime "$out/lib/openclaw/"
+fi
 if [ -d extensions ]; then
   log_step "copy extensions" cp -r extensions "$out/lib/openclaw/"
 fi
