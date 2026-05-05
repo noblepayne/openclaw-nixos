@@ -21,6 +21,9 @@ mkdir -p "$out/lib/openclaw" "$out/bin"
 
 # Build dir is ephemeral in Nix; moving avoids an expensive deep copy of node_modules.
 log_step "move build outputs" mv dist node_modules package.json "$out/lib/openclaw/"
+if [ -d dist-runtime ]; then
+  log_step "move dist-runtime" mv dist-runtime "$out/lib/openclaw/"
+fi
 if [ -d extensions ]; then
   log_step "copy extensions" cp -r extensions "$out/lib/openclaw/"
 fi
@@ -100,8 +103,6 @@ if [ -n "$hasown_src" ]; then
   fi
 fi
 
-# Note: pnpm prune --prod may leave dangling symlinks inside .pnpm for
-# pruned dev deps. These are harmless and don't affect runtime.
-# The original nix-openclaw checked all symlinks recursively which was too strict.
+# pnpm prune --prod may leave dangling symlinks for pruned dev deps. Harmless at runtime.
 
 bash -e -c '. "$STDENV_SETUP"; makeWrapper "$NODE_BIN" "$out/bin/openclaw" --add-flags "$out/lib/openclaw/dist/index.js" --set-default OPENCLAW_NIX_MODE "1"'
