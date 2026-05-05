@@ -43,7 +43,6 @@ UPSTREAM="${TMPDIR}/openclaw-${REV}"
 
 echo ">> Regenerating pruned lockfile..."
 ensure_pruner_deps
-node _tools/lockfile-pruner/prune.mjs "$UPSTREAM" "$REPO_ROOT"
 mv "$REPO_ROOT/pnpm-lock.yaml" "$REPO_ROOT/pnpm-lock-pruned.yaml"
 
 echo ">> Cleanup..."
