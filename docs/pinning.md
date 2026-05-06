@@ -4,7 +4,8 @@
 
 | Artifact | Location | Format |
 |----------|----------|--------|
-| OpenClaw source | `flake.lock` → `inputs.openclaw` | GitHub rev + narHash |
+| OpenClaw source pin | `flake.nix` → `inputs.openclaw.url` | GitHub ref (authoritative) |
+| Resolved source | `flake.lock` → `inputs.openclaw.locked` | GitHub rev + narHash |
 | Pruned lockfile | `pnpm-lock-pruned.yaml` | pnpm lockfile v9 |
 | pnpmDepsHash | `flake.nix` | Nix hash (sha256-...) |
 | Nixpkgs | `flake.lock` → `inputs.nixpkgs` | GitHub rev + narHash |
@@ -16,25 +17,49 @@
 ```bash
 cd ~/src/openclaw-nixos
 
-# 1. Pull new openclaw source
-nix flake update openclaw
+# 1. Pin authoritative URL in flake.nix
+#    Edit inputs.openclaw.url to the new tag (e.g. v2026.5.6)
 
-# 2. Regenerate pruned lockfile
-#    Assumes openclaw source is checked out at OPENCLAW_DIR (default: /dev/shm/openclaw)
-OPENCLAW_DIR=/path/to/openclaw scripts/update-pin.sh
+# 2. Resolve lockfile from authoritative pin
+nix flake lock --update-input openclaw
 
-# 3. Build (will fail on hash mismatch)
-nix build .#openclaw-gateway 2>&1 | grep 'got:'
-# Output: got:    sha256-<real-hash>
+# 3. Prune lockfile
+#    Download raw upstream source and run the pruner
+TMPDIR=$(mktemp -d)
+curl -fSL "https://github.com/openclaw/openclaw/archive/$(jq -r '.nodes.openclaw.locked.rev' flake.lock).tar.gz" \
+  | tar xz -C "$TMPDIR"
+node _tools/lockfile-pruner/prune.mjs "$TMPDIR/openclaw-$(jq -r '.nodes.openclaw.locked.rev' flake.lock)" .
+mv pnpm-lock.yaml pnpm-lock-pruned.yaml
 
-# 4. Update the hash in flake.nix
-#    Edit pnpmDepsHash = "sha256-<real-hash>";
+# 4. Capture pnpmDepsHash
+#    Set placeholder first
+perl -0pi -e 's|pnpmDepsHash = "[^"]*";|pnpmDepsHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";|' flake.nix
+nix build .#openclaw-gateway.pnpmDeps 2>&1 | grep 'got:'
 
-# 5. Verify build
+#    Update with the real hash
+perl -0pi -e 's|pnpmDepsHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";|pnpmDepsHash = "sha256-<got-value>";|' flake.nix
+
+# 5. Verify
 nix build .#openclaw-gateway
+nix run .#openclaw-gateway -- --version
 
 # 6. Commit
-git add -A && git commit -m "bump openclaw to $(jq -r '.nodes.openclaw.locked.rev' flake.lock | head -c 8)"
+git add flake.nix flake.lock pnpm-lock-pruned.yaml && git commit -m "chore: bump openclaw to $(jq -r '.nodes.openclaw.locked.rev' flake.lock | head -c 8)"
+```
+
+### Automated alternative: `scripts/roll-update.sh`
+
+The repo includes a full automation script that covers updates, pruning, hash capture, and builds:
+
+```bash
+# Dry run (builds but doesn't commit)
+./scripts/roll-update.sh --tag v2026.5.6
+
+# With push (auto-commits and pushes current branch)
+./scripts/roll-update.sh --tag v2026.5.6 --push
+
+# Pin to a specific commit SHA
+./scripts/roll-update.sh --rev <sha>
 ```
 
 ### Nixpkgs only
@@ -46,7 +71,7 @@ nix flake update nixpkgs
 ### Just re-prune the lockfile (same upstream version)
 
 ```bash
-OPENCLAW_DIR=/path/to/openclaw node _tools/lockfile-pruner/prune.mjs $OPENCLAW_DIR .
+node _tools/lockfile-pruner/prune.mjs /path/to/openclaw-source .
 mv pnpm-lock.yaml pnpm-lock-pruned.yaml
 # Rebuild to check hash
 nix build .#openclaw-gateway 2>&1 | grep 'got:'
@@ -65,10 +90,19 @@ error: hash mismatch in fixed-output derivation:
 
 Copy the `got:` value into `flake.nix`.
 
-## Why three separate pins?
+## pnpm config mismatch
 
-1. **flake.lock (openclaw SHA)**: Tracks upstream source. Updated by `nix flake update`.
-2. **pnpm-lock-pruned.yaml**: Our filtered lockfile. Must be regenerated when upstream changes their lockfile.
-3. **pnpmDepsHash**: Hash of the fetched pnpm store for our pruned lockfile. Must match exactly or Nix refuses to build.
+If the build fails with `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`:
 
-All three must be consistent. The `update-pin.sh` script handles #1 and #2. #3 is manual (you verify the build).
+This happens when the upstream `package.json` `pnpm.overrides` block has changed since the last version bump. The pruned lockfile preserves these overrides from the upstream source, so re-running the pruner on the fresh 5.6 source resolves it — there is no manual edit needed.
+
+## Why four separate pins?
+
+`AGENTS.md` defines the authoritative ordering:
+
+1. **`flake.nix` URL** — the authoritative pin. Always update this first.
+2. **`flake.lock`** — resolved from `flake.nix`. Never hand-edit.
+3. **`pnpm-lock-pruned.yaml`** — filtered lockfile. Regenerate via pruner.
+4. **`pnpmDepsHash`** — hash of the fetched pnpm store. Must match exactly.
+
+All four must be consistent, and `flake.nix` is the source of truth.
