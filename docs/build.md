@@ -79,3 +79,11 @@ Check the build log for the specific error. Common causes:
 ### Lockfile mismatch
 
 If `pnpm install --frozen-lockfile` fails, the pruned lockfile doesn't match the source. Regenerate it with the pruner.
+
+### pnpm config mismatch (`ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`)
+
+This error occurs when the upstream `package.json` has updated its `pnpm.overrides` block (common in minor version bumps). The pruner preserves these overrides from the raw upstream lockfile, so the fix is to **re-run the pruner from the fresh upstream source** — no manual edits needed.
+
+Always update `flake.nix` → `flake.lock` → prune → hash, in that order. The `flake.nix` URL is the authoritative pin; `flake.lock` resolves from it. Never hand-edit the lockfile.
+
+See `docs/pinning.md` for the full bump procedure.
