@@ -19,16 +19,16 @@
     "openclaw": {
       "flake": false,
       "locked": {
-        "lastModified": 1776952861,
-        "narHash": "sha256-BB+stGBDgMRAPHrVWJS2dFRjw2WrVrFdVf/23Tq1UeA=",
+        "lastModified": 1777879281,
+        "narHash": "sha256-6WIjb/0dFuGPtXnzpUCrkZ7RYEiRttOTc9Jc0OKbfdE=",
         "owner": "openclaw",
         "repo": "openclaw",
-        "rev": "00bd2cf7a376f1fba26291c6c4766f1f15cbdfa5",
+        "rev": "06d46f7cf638a31c4852c068aeeaa76f5e949941",
         "type": "github"
       },
       "original": {
         "owner": "openclaw",
-        "ref": "v2026.4.22",
+        "ref": "v2026.5.3",
         "repo": "openclaw",
         "type": "github"
       }

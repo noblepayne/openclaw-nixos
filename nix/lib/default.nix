@@ -64,7 +64,7 @@
       then pluginCfg.version
       else pluginCfg.package.version or null;
   in
-    (lib.optionalAttrs true {
+    ({
       source = "path";
       sourcePath = toString pluginCfg.package;
       installPath = mkLocalPluginInstallPath stateDir pluginId;

@@ -51,7 +51,7 @@ const FAMILIES = [
   { p: "@lydell/node-pty-", k: (n) => /node-pty-linux-x64/.test(n) },
   { p: "lightningcss-", k: (n) => /lightningcss-linux-x64-gnu/.test(n) },
   { p: "sqlite-vec-", k: (n) => /sqlite-vec-linux-x64/.test(n) },
-  { p: "fsevents@", k: () => false }, // always strip (macOS only)
+  { p: "fsevents", k: () => false }, // matches full package name, others match prefix patterns
 ];
 
 function isPlatformPkg(name) {
@@ -113,13 +113,27 @@ if (lockfile.packages) {
       if (!pkg[depType]) continue;
       for (const depName of Object.keys(pkg[depType])) {
         const ver = pkg[depType][depName];
-        const baseVer = typeof ver === "string" ? ver.split("(")[0] : ver;
-        const prefix = `${depName}@${baseVer}`;
-        if (strippedPrefixes.has(prefix)) {
-          if (verbose)
-            console.error(`    [${key}] ${depType}.${depName}@${baseVer}`);
-          delete pkg[depType][depName];
-          cleanedRefs++;
+        // Strip refs can be in two formats depending on pnpm version/package:
+        // 1. "name@version" (standard: node-pty, sharp, etc.)
+        // 2. "full-pkg-key" when pnpm aliases the dep (codex, codex-acp)
+        if (typeof ver === "string") {
+          const baseVer = ver.split("(")[0];
+          const prefix = `${depName}@${baseVer}`;
+          if (strippedPrefixes.has(prefix) || strippedPrefixes.has(baseVer) || stripped.has(ver)) {
+            if (verbose)
+              console.error(`    [${key}] ${depType}.${depName}@${ver}`);
+            delete pkg[depType][depName];
+            cleanedRefs++;
+          }
+        } else {
+          const baseVer = ver;
+          const prefix = `${depName}@${baseVer}`;
+          if (strippedPrefixes.has(prefix)) {
+            if (verbose)
+              console.error(`    [${key}] ${depType}.${depName}@${baseVer}`);
+            delete pkg[depType][depName];
+            cleanedRefs++;
+          }
         }
       }
       if (Object.keys(pkg[depType]).length === 0) delete pkg[depType];
@@ -127,6 +141,9 @@ if (lockfile.packages) {
   }
   console.error(`Cleaned ${cleanedRefs} dangling refs in package entries`);
 }
+
+// --- Phase 3: clean dangling refs in snapshots section ---
+// NOTE: pnpm v9 merges snapshots into packages, so this is handled above.
 
 // --- Write ---
 
