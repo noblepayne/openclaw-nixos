@@ -42,3 +42,10 @@ if [ -f src/docker-setup.test.ts ]; then
     sed -i 's|if \[\[ "${1:-}" == "compose" \]\]; then|if [ "${1:-}" = "compose" ]; then|' src/docker-setup.test.ts
   fi
 fi
+
+if [ -f src/plugins/public-surface-loader.ts ]; then
+  # Bundled plugin public surfaces live in the immutable Nix store on this host.
+  # Nix may hardlink identical store files, so hardlink rejection is too strict
+  # for bundled artifacts while still remaining useful for external plugin paths.
+  sed -i '/const opened = openBoundaryFileSync({/,/});/s/rejectHardlinks: true/rejectHardlinks: false/' src/plugins/public-surface-loader.ts
+fi
